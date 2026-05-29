@@ -1,0 +1,812 @@
+# IFC Pipeline — Kapsamlı Algoritma Akış Diyagramı
+
+> Yazılımın tüm çalışma senaryolarını, hata giderme ve ayıklama süreçlerini gösteren kutulu akış diyagramları.
+
+---
+
+## 1. Ana Program Akışı (main.py)
+
+Programın başlatılmasından komut yönlendirmesine kadar olan üst düzey akış:
+
+```mermaid
+flowchart TD
+    START(["🚀 Program Başlatıldı<br/>python3 main.py"])
+    
+    START --> ARGC{"sys.argv == 1?<br/>(Argüman var mı?)"}
+    
+    %% ═══ İNTERAKTİF MOD ═══
+    ARGC -->|"Argüman yok"| SETUP_LOG_I["⚙️ setup_logging(verbose=False)<br/>Logging yapılandır"]
+    SETUP_LOG_I --> INTERACTIVE["📂 cmd_interactive()<br/>İnteraktif Mod Başlat"]
+    
+    INTERACTIVE --> TK_CHECK{"tkinter<br/>kurulu mu?"}
+    TK_CHECK -->|"Hayır ❌"| TK_ERR["❌ Hata Mesajı:<br/>'tkinter kurulu değil.<br/>Terminal modunu kullanın'"]
+    TK_ERR --> END_FAIL(["🔴 Program Sonlandı<br/>return"])
+    
+    TK_CHECK -->|"Evet ✅"| TK_INIT["🪟 tk.Tk() oluştur<br/>root.withdraw() — Pencereyi gizle"]
+    TK_INIT --> FILE_DLG["📁 filedialog.askopenfilename()<br/>Dosya seçme penceresi aç<br/>Filtre: *.ifc"]
+    FILE_DLG --> FILE_SEL{"Dosya<br/>seçildi mi?"}
+    FILE_SEL -->|"Hayır ❌"| NO_FILE["❌ 'Dosya seçilmedi,<br/>işlem iptal edildi'"]
+    NO_FILE --> END_FAIL
+    FILE_SEL -->|"Evet ✅"| BUILD_PATH["📝 Çıktı yolu oluştur:<br/>ifc_dir + base_name +<br/>'_Metraj_Raporu.xlsx'"]
+    BUILD_PATH --> RUN_PIPE["▶️ run_pipeline()<br/>ifc_path, output_path"]
+    
+    %% ═══ CLI MOD ═══
+    ARGC -->|"Argüman var"| ARGPARSE["⚙️ argparse ile<br/>komut satırı parse et"]
+    ARGPARSE --> SETUP_LOG_C["⚙️ setup_logging(verbose)<br/>--verbose varsa DEBUG"]
+    SETUP_LOG_C --> CMD_CHECK{"args.command<br/>nedir?"}
+    
+    CMD_CHECK -->|"inspect"| CMD_INSPECT["🔍 cmd_inspect(args)"]
+    CMD_CHECK -->|"extract"| CMD_EXTRACT["📤 cmd_extract(args)"]
+    CMD_CHECK -->|"compare"| CMD_COMPARE["⚖️ cmd_compare(args)"]
+    CMD_CHECK -->|"Tanımsız / boş"| PRINT_HELP["📖 parser.print_help()<br/>Yardım mesajını göster"]
+    PRINT_HELP --> END_OK(["🟢 Program Sonlandı"])
+    
+    %% ═══ INSPECT KOMUTU ═══
+    CMD_INSPECT --> INSP_LOAD["load_config() + load()"]
+    INSP_LOAD --> INSP_UNITS["detect_units()"]
+    INSP_UNITS --> INSP_PRINT["📋 info.summary() yazdır<br/>+ units.describe()"]
+    INSP_PRINT --> END_OK
+    
+    %% ═══ EXTRACT KOMUTU ═══
+    CMD_EXTRACT --> RUN_PIPE
+    RUN_PIPE --> PIPE_PROCESS[["🔄 run_pipeline() Süreci<br/>(Aşağıda detaylı)"]]
+    PIPE_PROCESS --> END_OK
+    
+    %% ═══ COMPARE KOMUTU ═══
+    CMD_COMPARE --> CMP_CHECK{"len(ifc_files)<br/> >= 2 mi?"}
+    CMP_CHECK -->|"Hayır ❌"| CMP_ERR["❌ 'En az 2 dosya gerekli'<br/>sys.exit(1)"]
+    CMP_ERR --> END_FAIL
+    CMP_CHECK -->|"Evet ✅"| CMP_LOOP[["🔄 Her dosya için:<br/>load → detect_units →<br/>extract_all → to_dataframe"]]
+    CMP_LOOP --> CMP_SAFE["🛡️ _safe_output_path()<br/>Çıktı dosyası koruması"]
+    CMP_SAFE --> CMP_EXPORT["📊 export_comparison()<br/>Karşılaştırma Excel'e yaz"]
+    CMP_EXPORT --> END_OK
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef process fill:#16213e,stroke:#0f3460,color:#eee,stroke-width:1px
+    classDef decision fill:#0f3460,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef error fill:#c0392b,stroke:#e74c3c,color:#fff,stroke-width:2px
+    classDef success fill:#27ae60,stroke:#2ecc71,color:#fff,stroke-width:1px
+    classDef subprocess fill:#2c3e50,stroke:#3498db,color:#ecf0f1,stroke-width:2px
+
+    class START,END_OK,END_FAIL startEnd
+    class TK_ERR,NO_FILE,CMP_ERR error
+    class PIPE_PROCESS,CMP_LOOP subprocess
+```
+
+---
+
+## 2. Pipeline Ana Süreci (run_pipeline)
+
+`run_pipeline()` fonksiyonunun 5 adımlık detaylı akışı:
+
+```mermaid
+flowchart TD
+    PIPE_START(["▶️ run_pipeline()<br/>ifc_path, output_path, elem_filter"])
+    
+    %% ═══ ADIM 0: CONFIG ═══
+    PIPE_START --> LOAD_CFG["⚙️ load_config()<br/>mapping.yaml yükle"]
+    LOAD_CFG --> CFG_EXISTS{"Config dosyası<br/>mevcut mu?"}
+    CFG_EXISTS -->|"Hayır ❌"| CFG_ERR1["❌ 'Config dosyası bulunamadı'<br/>sys.exit(1)"]
+    CFG_ERR1 --> PIPE_FAIL(["🔴 Pipeline Başarısız"])
+    
+    CFG_EXISTS -->|"Evet ✅"| CFG_PARSE{"YAML<br/>parse edilebilir mi?"}
+    CFG_PARSE -->|"Hayır ❌"| CFG_ERR2["❌ 'Config dosyası bozuk<br/>(YAML parse hatası)'<br/>sys.exit(1)"]
+    CFG_ERR2 --> PIPE_FAIL
+    
+    CFG_PARSE -->|"Evet ✅"| CFG_EMPTY{"Config<br/>boş mu?"}
+    CFG_EMPTY -->|"Evet ❌"| CFG_ERR3["❌ 'Config dosyası boş'<br/>sys.exit(1)"]
+    CFG_ERR3 --> PIPE_FAIL
+    
+    CFG_EMPTY -->|"Hayır ✅"| CFG_KEY{"'element_types'<br/>anahtarı var mı?"}
+    CFG_KEY -->|"Hayır ❌"| CFG_ERR4["❌ 'element_types<br/>anahtarı bulunamadı'<br/>sys.exit(1)"]
+    CFG_ERR4 --> PIPE_FAIL
+    
+    %% ═══ ADIM 1: DOSYA YÜKLEME ═══
+    CFG_KEY -->|"Evet ✅"| STEP1["📂 ADIM 1/5 - Dosya Yükleniyor"]
+    STEP1 --> LOAD_CALL[["🔄 load(ifc_path, config)<br/>(Detay: Bölüm 3)"]]
+    LOAD_CALL --> PRINT_INFO["📋 info.summary() yazdır"]
+    
+    %% ═══ ADIM 2: BİRİM TESPİTİ ═══
+    PRINT_INFO --> STEP2["📐 ADIM 2/5 - Birim Sistemi"]
+    STEP2 --> UNITS_CALL[["🔄 detect_units(ifc)<br/>(Detay: Bölüm 4)"]]
+    UNITS_CALL --> PRINT_UNITS["📋 units.describe() yazdır"]
+    
+    %% ═══ ADIM 3: ELEMENT ÇIKARMA ═══
+    PRINT_UNITS --> STEP3["🏗️ ADIM 3/5 - Elementler Çekiliyor"]
+    STEP3 --> EXTRACT_CALL[["🔄 extract_all()<br/>(Detay: Bölüm 5)"]]
+    EXTRACT_CALL --> PRINT_STATS["📊 İstatistikleri yazdır:<br/>Her tip için element sayısı<br/>+ TOPLAM"]
+    
+    %% ═══ ADIM 4: DATAFRAME & QA ═══
+    PRINT_STATS --> STEP4["📊 ADIM 4/5 - DataFrame ve Doğrulama"]
+    STEP4 --> DF_CALL["to_dataframe(rows)<br/>Tip dönüşümü + temizlik"]
+    DF_CALL --> QA_CALL["quality_report(df)<br/>Veri kalite raporu"]
+    QA_CALL --> QA_WARN{"Uyarılar<br/>var mı?"}
+    QA_WARN -->|"Evet ⚠️"| PRINT_WARN["⚠️ Uyarıları yazdır:<br/>• Eksik metraj<br/>• Duplicate ID<br/>• Katsız element"]
+    QA_WARN -->|"Hayır ✅"| STEP5
+    PRINT_WARN --> STEP5
+    
+    %% ═══ ADIM 5: ÇIKTI YAZMA ═══
+    STEP5 --> SAFE_PATH["🛡️ _safe_output_path()<br/>Dosya varsa yeniden adlandır"]
+    SAFE_PATH --> OUTPUT_CHECK{"Çıktı formatı<br/>nedir?"}
+    OUTPUT_CHECK -->|".json"| TO_JSON["📄 to_json(df, path)<br/>JSON olarak kaydet"]
+    OUTPUT_CHECK -->|".xlsx"| TO_EXCEL["📊 to_excel(df, path, qa)<br/>Excel olarak kaydet"]
+    TO_JSON --> PIPE_OK["✅ Tamamlandı!<br/>N element → dosyaya kaydedildi"]
+    TO_EXCEL --> PIPE_OK
+    PIPE_OK --> PIPE_END(["🟢 Pipeline Tamamlandı"])
+    
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef process fill:#16213e,stroke:#0f3460,color:#eee,stroke-width:1px
+    classDef decision fill:#0f3460,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef error fill:#c0392b,stroke:#e74c3c,color:#fff,stroke-width:2px
+    classDef step fill:#2c3e50,stroke:#f39c12,color:#fff,stroke-width:2px
+    classDef subprocess fill:#2c3e50,stroke:#3498db,color:#ecf0f1,stroke-width:2px
+
+    class PIPE_START,PIPE_END,PIPE_FAIL startEnd
+    class CFG_ERR1,CFG_ERR2,CFG_ERR3,CFG_ERR4 error
+    class STEP1,STEP2,STEP3,STEP4 step
+    class LOAD_CALL,UNITS_CALL,EXTRACT_CALL subprocess
+```
+
+---
+
+## 3. IFC Dosya Yükleme Süreci (loader.py)
+
+`load()` fonksiyonunun dosya açma, meta bilgi çıkarma ve yazılım tespiti akışı:
+
+```mermaid
+flowchart TD
+    LOAD_START(["📂 load(path, config)"])
+    
+    %% ═══ DOSYA DOĞRULAMA ═══
+    LOAD_START --> FILE_CHK{"os.path.isfile(path)?<br/>Dosya mevcut mu?"}
+    FILE_CHK -->|"Hayır ❌"| FILE_ERR["💥 FileNotFoundError<br/>'Dosya bulunamadı: path'"]
+    FILE_ERR --> LOAD_FAIL(["🔴 Exception Fırlatıldı"])
+    
+    FILE_CHK -->|"Evet ✅"| SIZE_CHK["📏 Dosya boyutu hesapla<br/>file_size_mb = bytes / 1MB"]
+    SIZE_CHK --> SIZE_WARN{"file_size_mb<br/>> 500 MB?"}
+    SIZE_WARN -->|"Evet ⚠️"| SIZE_LOG["⚠️ logger.warning:<br/>'Dosya çok büyük —<br/>işlem uzun sürebilir'"]
+    SIZE_WARN -->|"Hayır ✅"| IFC_OPEN
+    SIZE_LOG --> IFC_OPEN
+    
+    %% ═══ IFC AÇMA ═══
+    IFC_OPEN["🔓 ifcopenshell.open(path)"]
+    IFC_OPEN --> IFC_OK{"Başarılı mı?"}
+    IFC_OK -->|"Hayır ❌"| IFC_ERR["💥 RuntimeError<br/>'IFC açılamadı: path'"]
+    IFC_ERR --> LOAD_FAIL
+    
+    %% ═══ META BİLGİ ÇIKARMA ═══
+    IFC_OK -->|"Evet ✅"| META_START["📋 Meta bilgi çıkarma başlat"]
+    META_START --> APP_INFO["🏢 _get_application_info(ifc)<br/>IfcApplication'dan:<br/>• app_name<br/>• app_version<br/>• organization"]
+    APP_INFO --> SW_DETECT["🔎 _detect_software(app_name)<br/>İmza eşleştirme"]
+    
+    SW_DETECT --> SW_MATCH{"İmza<br/>bulundu mu?"}
+    SW_MATCH -->|"revit"| SW_REVIT["✅ 'revit'"]
+    SW_MATCH -->|"tekla"| SW_TEKLA["✅ 'tekla'"]
+    SW_MATCH -->|"archicad"| SW_ARCH["✅ 'archicad'"]
+    SW_MATCH -->|"allplan/diğer"| SW_OTHER["✅ ilgili yazılım adı"]
+    SW_MATCH -->|"Eşleşme yok"| SW_UNK["⚠️ 'unknown'"]
+    
+    SW_REVIT --> PROJ_INFO
+    SW_TEKLA --> PROJ_INFO
+    SW_ARCH --> PROJ_INFO
+    SW_OTHER --> PROJ_INFO
+    SW_UNK --> PROJ_INFO
+    
+    %% ═══ PROJE / YAPI / KAT BİLGİSİ ═══
+    PROJ_INFO["🏗️ Proje bilgisi çek:<br/>• IfcProject.Name<br/>• IfcSite.Name<br/>• IfcBuilding.Name"]
+    PROJ_INFO --> STOREY_CHK["🏢 IfcBuildingStorey sayımı"]
+    STOREY_CHK --> STOREY_WARN{"storey_count<br/>== 0?"}
+    STOREY_WARN -->|"Evet ⚠️"| STOREY_W["⚠️ Uyarı ekle:<br/>'IfcBuildingStorey bulunamadı'"]
+    STOREY_WARN -->|"Hayır ✅"| ELEM_COUNT
+    STOREY_W --> ELEM_COUNT
+    
+    %% ═══ ELEMENT SAYIMI ═══
+    ELEM_COUNT["📊 _count_physical_elements()<br/>Config'den IFC sınıfları +<br/>Ek sabit sınıflar"]
+    
+    %% ═══ QUANTİTY SET KONTROL ═══
+    ELEM_COUNT --> QSET_CHK{"IfcElementQuantity<br/>var mı?"}
+    QSET_CHK -->|"Hayır ⚠️"| QSET_W["⚠️ Uyarı ekle:<br/>'QuantitySet bulunamadı —<br/>Export base quantities kapalı olabilir'"]
+    QSET_CHK -->|"Evet ✅"| GEOM_CHK
+    QSET_W --> GEOM_CHK
+    
+    %% ═══ GEOMETRİ KONTROL ═══
+    GEOM_CHK["🔷 IfcShapeRepresentation<br/>kontrolü"]
+    
+    %% ═══ SCHEMA UYARISI ═══
+    GEOM_CHK --> SCHEMA_CHK{"schema ==<br/>'IFC2X3'?"}
+    SCHEMA_CHK -->|"Evet ⚠️"| SCHEMA_W["⚠️ Uyarı ekle:<br/>'IFC2X3 — deprecated class'lar<br/>normalize edilecek'"]
+    SCHEMA_CHK -->|"Hayır"| BUILD_INFO
+    SCHEMA_W --> BUILD_INFO
+    
+    %% ═══ SONUÇ ═══
+    BUILD_INFO["📦 IFCFileInfo dataclass oluştur<br/>Tüm meta bilgileri paketle"]
+    BUILD_INFO --> LOAD_END(["🟢 return (ifc, info)"])
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef error fill:#c0392b,stroke:#e74c3c,color:#fff,stroke-width:2px
+    classDef warn fill:#e67e22,stroke:#f39c12,color:#fff,stroke-width:1px
+
+    class LOAD_START,LOAD_END,LOAD_FAIL startEnd
+    class FILE_ERR,IFC_ERR error
+```
+
+---
+
+## 4. Birim Tespiti Süreci (units.py)
+
+`detect_units()` fonksiyonunun uzunluk, alan ve hacim birimlerini bağımsız tespit etme akışı:
+
+```mermaid
+flowchart TD
+    UNIT_START(["📐 detect_units(ifc)"])
+    
+    UNIT_START --> INIT["Başlangıç değerleri:<br/>length=1.0, area=1.0, volume=1.0<br/>Tüm flag'ler = False"]
+    
+    INIT --> PROJ_CHK{"IfcProject ve<br/>UnitsInContext<br/>mevcut mu?"}
+    PROJ_CHK -->|"Hayır ⚠️"| DEF_UNITS["⚠️ Varsayılan birimler<br/>kullanılacak (Metre)<br/>logger.warning"]
+    DEF_UNITS --> UNIT_RETURN
+    
+    PROJ_CHK -->|"Evet ✅"| UNIT_LOOP["🔄 Her unit için döngü:<br/>unit_assignment.Units"]
+    
+    UNIT_LOOP --> UNIT_TYPE{"unit.is_a() nedir?"}
+    
+    %% ═══ DÖNÜŞÜM TABANLI BİRİM ═══
+    UNIT_TYPE -->|"IfcConversionBasedUnit"| CONV_FACTOR["_get_conversion_factor(unit)<br/>ConversionFactor.ValueComponent<br/>veya UNIT_TO_SI tablosu"]
+    
+    %% ═══ SI BİRİMİ ═══
+    UNIT_TYPE -->|"IfcSIUnit"| SI_CALC["SI hesapla:<br/>prefix = SI_PREFIXES tablosu<br/>base = UNIT_TO_SI tablosu<br/>factor = base × prefix"]
+    
+    CONV_FACTOR --> ASSIGN_TYPE
+    SI_CALC --> ASSIGN_TYPE
+    
+    %% ═══ BİRİM TİPİ ATAMA ═══
+    ASSIGN_TYPE{"unit_type nedir?"}
+    ASSIGN_TYPE -->|"LENGTHUNIT"| SET_LEN["length_factor = factor<br/>length_defined = True"]
+    ASSIGN_TYPE -->|"AREAUNIT"| SET_AREA["area_factor = factor<br/>area_defined = True"]
+    ASSIGN_TYPE -->|"VOLUMEUNIT"| SET_VOL["volume_factor = factor<br/>volume_defined = True"]
+    ASSIGN_TYPE -->|"Diğer"| SKIP_UNIT["⏭️ Atla"]
+    
+    SET_LEN --> NEXT_UNIT{"Sonraki unit<br/>var mı?"}
+    SET_AREA --> NEXT_UNIT
+    SET_VOL --> NEXT_UNIT
+    SKIP_UNIT --> NEXT_UNIT
+    
+    NEXT_UNIT -->|"Evet"| UNIT_LOOP
+    NEXT_UNIT -->|"Hayır"| FALLBACK
+    
+    %% ═══ FALLBACK SENARYOLAR ═══
+    FALLBACK{"Alan/Hacim birimi<br/>tanımlanmamış mı?"}
+    FALLBACK -->|"Alan yok +<br/>Uzunluk var"| AREA_FB["📐 area = length²<br/>logger.info"]
+    FALLBACK -->|"Hacim yok +<br/>Uzunluk var"| VOL_FB["📐 volume = length³<br/>logger.info"]
+    FALLBACK -->|"Hepsi tanımlı"| UNIT_RETURN
+    
+    AREA_FB --> VOL_CHK{"Hacim de<br/>tanımsız mı?"}
+    VOL_CHK -->|"Evet"| VOL_FB
+    VOL_CHK -->|"Hayır"| UNIT_RETURN
+    VOL_FB --> UNIT_RETURN
+    
+    UNIT_RETURN["📦 UnitFactors oluştur:<br/>length, area, volume,<br/>source_info"]
+    UNIT_RETURN --> UNIT_END(["🟢 return UnitFactors"])
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef fallback fill:#8e44ad,stroke:#9b59b6,color:#fff,stroke-width:1px
+
+    class UNIT_START,UNIT_END startEnd
+    class AREA_FB,VOL_FB fallback
+```
+
+---
+
+## 5. Element Çıkarma Süreci (extractor.py)
+
+`extract_all()` ve `extract_element()` fonksiyonlarının detaylı akışı:
+
+```mermaid
+flowchart TD
+    EXT_START(["🏗️ extract_all()<br/>ifc, config, units,<br/>source_software, source_filename,<br/>element_filter"])
+    
+    %% ═══ BAŞLANGIÇ ═══
+    EXT_START --> TQDM_CHK{"tqdm modülü<br/>kurulu mu?"}
+    TQDM_CHK -->|"Evet"| TQDM_YES["has_tqdm = True<br/>İlerleme çubuğu aktif"]
+    TQDM_CHK -->|"Hayır"| TQDM_NO["has_tqdm = False<br/>İlerleme çubuğu yok"]
+    TQDM_YES --> CTX_BUILD
+    TQDM_NO --> CTX_BUILD
+    
+    CTX_BUILD["📦 ExtractionContext oluştur<br/>ifc, config, units,<br/>source_software, source_filename"]
+    CTX_BUILD --> INIT_VARS["rows = listo boş, stats = dict boş"]
+    
+    %% ═══ ELEMENT TİP DÖNGÜSÜ ═══
+    INIT_VARS --> TYPE_LOOP["🔄 Her element_type için döngü<br/>(config.element_types)"]
+    TYPE_LOOP --> FILTER_CHK{"element_filter<br/>aktif mi ve<br/>bu tip filtre dışı mı?"}
+    FILTER_CHK -->|"Filtre dışı"| SKIP_TYPE["⏭️ Bu tipi atla"]
+    SKIP_TYPE --> NEXT_TYPE
+    FILTER_CHK -->|"Filtre içi / yok"| CLASS_LOOP
+    
+    %% ═══ IFC CLASS DÖNGÜSÜ ═══
+    CLASS_LOOP["🔄 Her ifc_class için döngü<br/>(elem_config.ifc_classes)"]
+    CLASS_LOOP --> BY_TYPE["ifc.by_type(ifc_class,<br/>include_subtypes=False)"]
+    BY_TYPE --> BY_TYPE_OK{"Başarılı mı?"}
+    BY_TYPE_OK -->|"Hayır ❌"| SKIP_CLASS["⏭️ Bu sınıfı atla<br/>(Exception yakalandı)"]
+    SKIP_CLASS --> NEXT_CLASS
+    BY_TYPE_OK -->|"Evet ✅"| PROGRESS_CHK
+    
+    PROGRESS_CHK{"tqdm var ve<br/>element > 100?"}
+    PROGRESS_CHK -->|"Evet"| WITH_TQDM["📊 tqdm ile iterator"]
+    PROGRESS_CHK -->|"Hayır"| NO_TQDM["Düz iterator"]
+    WITH_TQDM --> ELEM_LOOP
+    NO_TQDM --> ELEM_LOOP
+    
+    %% ═══ ELEMENT DÖNGÜSÜ ═══
+    ELEM_LOOP["🔄 Her element için döngü"]
+    ELEM_LOOP --> TYPE_PROD{"element.is_a<br/>IfcTypeProduct?"}
+    TYPE_PROD -->|"Evet"| SKIP_ELEM["⏭️ Tip ürünü, atla"]
+    SKIP_ELEM --> NEXT_ELEM
+    
+    TYPE_PROD -->|"Hayır"| DUP_CHK{"element.id()<br/>daha önce<br/>görüldü mü?"}
+    DUP_CHK -->|"Evet"| SKIP_DUP["⏭️ Tekrar, atla"]
+    SKIP_DUP --> NEXT_ELEM
+    
+    DUP_CHK -->|"Hayır"| ADD_SEEN["seen_ids.add(eid)"]
+    ADD_SEEN --> EXTRACT_ELEM[["🔄 extract_element()<br/>(Detay: Bölüm 6)"]]
+    EXTRACT_ELEM --> EXTRACT_OK{"Başarılı mı?"}
+    EXTRACT_OK -->|"Evet ✅"| APPEND_ROW["type_rows.append(row)"]
+    EXTRACT_OK -->|"Hayır ❌"| LOG_WARN["⚠️ logger.warning:<br/>'element atlandı'"]
+    LOG_WARN --> NEXT_ELEM
+    APPEND_ROW --> NEXT_ELEM
+    
+    NEXT_ELEM{"Sonraki<br/>element?"}
+    NEXT_ELEM -->|"Evet"| ELEM_LOOP
+    NEXT_ELEM -->|"Hayır"| NEXT_CLASS
+    
+    NEXT_CLASS{"Sonraki<br/>ifc_class?"}
+    NEXT_CLASS -->|"Evet"| CLASS_LOOP
+    NEXT_CLASS -->|"Hayır"| SAVE_STATS["stats elem_type = len type_rows<br/>rows.extend(type_rows)"]
+    
+    SAVE_STATS --> NEXT_TYPE{"Sonraki<br/>element_type?"}
+    NEXT_TYPE -->|"Evet"| TYPE_LOOP
+    NEXT_TYPE -->|"Hayır"| EXT_END(["🟢 return (rows, stats)"])
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef subprocess fill:#2c3e50,stroke:#3498db,color:#ecf0f1,stroke-width:2px
+    
+    class EXT_START,EXT_END startEnd
+    class EXTRACT_ELEM subprocess
+```
+
+---
+
+## 6. Tekil Element Veri Çıkarma (extract_element)
+
+`extract_element()` fonksiyonunun bir IFC elementinden tüm metraj verilerini çıkarma akışı:
+
+```mermaid
+flowchart TD
+    EE_START(["🔧 extract_element()<br/>element, element_type,<br/>config, ctx"])
+    
+    %% ═══ CACHE OLUŞTUR ═══
+    EE_START --> PSET_CACHE["📦 Pset/Qset Cache Oluştur<br/>PERF-1 düzeltmesi — tek seferde oku"]
+    PSET_CACHE --> GET_PSETS["get_all_psets(element)<br/>Tüm Property Set'ler"]
+    PSET_CACHE --> GET_QSETS["get_all_quantities(element)<br/>Tüm Quantity Set'ler"]
+    
+    %% ═══ TEMEL BİLGİLER ═══
+    GET_PSETS --> BASIC_INFO
+    GET_QSETS --> BASIC_INFO
+    BASIC_INFO["📋 Temel bilgiler çek:<br/>• GlobalId<br/>• Name<br/>• ifc_class<br/>• type_name"]
+    
+    %% ═══ KAT BİLGİSİ ═══
+    BASIC_INFO --> STOREY_INFO["🏢 get_storey(element, ifc)<br/>Kat adı + kot bilgisi"]
+    STOREY_INFO --> STOREY_CONV["safe_convert(level_elev,<br/>units.length)<br/>Kot birimini SI'ya dönüştür"]
+    
+    %% ═══ FAZ BİLGİSİ ═══
+    STOREY_CONV --> PHASE_INFO["🔨 get_phase(element, psets)<br/>Yapım aşaması tespiti"]
+    PHASE_INFO --> PHASE_SEARCH{"Hangi kaynaktan<br/>bulundu?"}
+    PHASE_SEARCH -->|"Standart IFC"| P_STD["Pset_ConstructionOccurrence<br/>.ConstructionPhase"]
+    PHASE_SEARCH -->|"Revit"| P_REV["Phase Created"]
+    PHASE_SEARCH -->|"Tekla"| P_TEK["PHASE veya Phase"]
+    PHASE_SEARCH -->|"Bulunamadı"| P_EMPTY["Boş string"]
+    
+    P_STD --> QTY_READ
+    P_REV --> QTY_READ
+    P_TEK --> QTY_READ
+    P_EMPTY --> QTY_READ
+    
+    %% ═══ QUANTITY OKUMA + BİRİM DÖNÜŞÜMÜ ═══
+    QTY_READ["📐 Quantity'leri cache'den oku<br/>fallback zincirleri ile"]
+    QTY_READ --> QTY_AREA["get_quantity → area_raw<br/>safe_convert → area_m2"]
+    QTY_READ --> QTY_VOL["get_quantity → volume_raw<br/>safe_convert → volume_m3"]
+    QTY_READ --> QTY_LEN["get_quantity → length_raw<br/>safe_convert → length_m"]
+    QTY_READ --> QTY_THK["get_quantity → thickness_raw<br/>safe_convert → thickness_m"]
+    
+    %% ═══ PROPERTY OKUMA ═══
+    QTY_AREA --> PROP_READ
+    QTY_VOL --> PROP_READ
+    QTY_LEN --> PROP_READ
+    QTY_THK --> PROP_READ
+    PROP_READ["🏷️ Property'leri cache'den oku:<br/>• is_external<br/>• load_bearing<br/>• fire_rating"]
+    
+    %% ═══ BOOLEAN DÖNÜŞÜM ═══
+    PROP_READ --> BOOL_CONV["🔀 Boolean dönüşümü:<br/>'true/1/yes/evet' → True<br/>'false/0/no/hayır' → False"]
+    
+    %% ═══ MALZEME ═══
+    BOOL_CONV --> MAT_READ["🧱 get_material_names(element)<br/>Malzeme isimleri çek"]
+    MAT_READ --> MAT_TYPE{"Malzeme tipi?"}
+    MAT_TYPE -->|"IfcMaterial"| M1["Tekli malzeme"]
+    MAT_TYPE -->|"IfcMaterialLayerSetUsage"| M2["Katmanlı malzeme<br/>Duvar katmanları"]
+    MAT_TYPE -->|"IfcMaterialProfileSetUsage"| M3["Profilli malzeme<br/>Çelik profiller"]
+    MAT_TYPE -->|"IfcMaterialConstituentSet"| M4["Bileşen malzeme<br/>IFC4 Revit 2024+"]
+    MAT_TYPE -->|"IfcMaterialList"| M5["Malzeme listesi"]
+    
+    M1 --> BUILD_ROW
+    M2 --> BUILD_ROW
+    M3 --> BUILD_ROW
+    M4 --> BUILD_ROW
+    M5 --> BUILD_ROW
+    
+    %% ═══ SONUÇ ═══
+    BUILD_ROW["📦 row dict oluştur:<br/>18 alan birleştir"]
+    BUILD_ROW --> EE_END(["🟢 return row"])
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+
+    class EE_START,EE_END startEnd
+```
+
+---
+
+## 7. Veri Normalizasyon ve Kalite Kontrolü (normalizer.py)
+
+`to_dataframe()` ve `quality_report()` fonksiyonlarının akışı:
+
+```mermaid
+flowchart TD
+    NORM_START(["📊 to_dataframe(rows)"])
+    
+    NORM_START --> EMPTY_CHK{"rows boş mu?"}
+    EMPTY_CHK -->|"Evet"| EMPTY_DF["Boş DataFrame döndür<br/>SCHEMA sütunlarıyla"]
+    EMPTY_DF --> NORM_END(["🟢 return df"])
+    
+    EMPTY_CHK -->|"Hayır"| CREATE_DF["pd.DataFrame(rows)"]
+    CREATE_DF --> ADD_MISSING["Eksik SCHEMA sütunlarını<br/>None ile ekle"]
+    ADD_MISSING --> REORDER["Sütun sıralaması:<br/>SCHEMA sütunları + Ekstra sütunlar"]
+    
+    %% ═══ TİP DÖNÜŞÜM DÖNGÜSÜ ═══
+    REORDER --> DTYPE_LOOP["🔄 Her sütun için<br/>tip dönüşümü"]
+    DTYPE_LOOP --> DTYPE_CHK{"Sütun tipi?"}
+    
+    DTYPE_CHK -->|"float64"| CONV_NUM["pd.to_numeric errors=coerce<br/>Geçersiz → NaN"]
+    DTYPE_CHK -->|"boolean"| CONV_BOOL["_to_boolean ile map<br/>True/False/pd.NA"]
+    DTYPE_CHK -->|"category"| CONV_CAT["astype category"]
+    DTYPE_CHK -->|"string"| CONV_STR["fillna + astype str<br/>+ _NULL_STRINGS temizliği"]
+    
+    CONV_NUM --> CONV_OK{"Dönüşüm<br/>başarılı mı?"}
+    CONV_BOOL --> CONV_OK
+    CONV_CAT --> CONV_OK
+    CONV_STR --> CONV_OK
+    
+    CONV_OK -->|"Hayır ⚠️"| CONV_WARN["⚠️ logger.warning:<br/>'Sütun tip dönüşümü başarısız'"]
+    CONV_OK -->|"Evet ✅"| NEXT_COL{"Sonraki<br/>sütun?"}
+    CONV_WARN --> NEXT_COL
+    
+    NEXT_COL -->|"Evet"| DTYPE_LOOP
+    NEXT_COL -->|"Hayır"| CLEAN_NEG
+    
+    %% ═══ NEGATİF DEĞER TEMİZLİĞİ ═══
+    CLEAN_NEG["🧹 Negatif/sıfır değerleri NaN yap<br/>area_m2, volume_m3,<br/>length_m, thickness_m"]
+    CLEAN_NEG --> RESET_IDX["reset_index drop=True"]
+    RESET_IDX --> NORM_END
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef warn fill:#e67e22,stroke:#f39c12,color:#fff,stroke-width:1px
+
+    class NORM_START,NORM_END startEnd
+    class CONV_WARN warn
+```
+
+---
+
+## 8. Kalite Raporu Süreci (quality_report)
+
+```mermaid
+flowchart TD
+    QA_START(["📋 quality_report(df)"])
+    QA_START --> QA_EMPTY{"df boş mu?"}
+    QA_EMPTY -->|"Evet"| QA_EMPTY_R["return: total=0,<br/>warnings = DataFrame boş"]
+    QA_EMPTY_R --> QA_END(["🟢 return dict"])
+
+    QA_EMPTY -->|"Hayır"| QA_MISSING["🔍 Her element tipi için<br/>beklenen quantity kontrolü:<br/>wall→area+volume<br/>beam→length+volume<br/>column→length+volume<br/>slab→area+volume ..."]
+    QA_MISSING --> QA_COVERAGE["📊 Kapsam hesapla:<br/>has_any / total × 100"]
+    QA_COVERAGE --> QA_MISSING_W{"Eksik metraj<br/>var mı?"}
+    QA_MISSING_W -->|"Evet ⚠️"| QA_W1["⚠️ 'N elementten M tanesinde<br/>metraj eksik —<br/>Export base quantities kapalı olabilir'"]
+    QA_MISSING_W -->|"Hayır"| QA_DUP
+    QA_W1 --> QA_DUP
+    
+    QA_DUP{"GlobalId<br/>tekrarı var mı?"}
+    QA_DUP -->|"Evet ⚠️"| QA_W2["⚠️ 'GlobalId tekrarı: N adet'"]
+    QA_DUP -->|"Hayır"| QA_LEVEL
+    QA_W2 --> QA_LEVEL
+    
+    QA_LEVEL{"Katsız element<br/>var mı?"}
+    QA_LEVEL -->|"Evet ⚠️"| QA_W3["⚠️ 'N element katsız geldi'"]
+    QA_LEVEL -->|"Hayır"| QA_RETURN
+    QA_W3 --> QA_RETURN
+    
+    QA_RETURN["📦 return dict:<br/>total, by_type,<br/>missing_quantities,<br/>coverage, warnings"]
+    QA_RETURN --> QA_END
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef warn fill:#e67e22,stroke:#f39c12,color:#fff,stroke-width:1px
+
+    class QA_START,QA_END startEnd
+    class QA_W1,QA_W2,QA_W3 warn
+```
+
+---
+
+## 9. Excel Export Süreci (exporter.py)
+
+`to_excel()` fonksiyonunun çok sekmeli, formatlanmış rapor oluşturma akışı:
+
+```mermaid
+flowchart TD
+    EXP_START(["📊 to_excel()<br/>df, output_path, quality"])
+    
+    EXP_START --> PREP["🧹 _prep(df)<br/>Boolean → Evet/Hayır<br/>Category → string<br/>Float → round 4"]
+    
+    %% ═══ SEKME 1 ═══
+    PREP --> SHEET1["📄 Sheet 1: Element Listesi<br/>export_df.to_excel()"]
+    SHEET1 --> FMT1["🎨 _autowidth + _format_sheet"]
+    
+    %% ═══ SEKME 2 ═══
+    FMT1 --> PIVOT_CHK{"include_pivot<br/>ve df boş değil mi?"}
+    PIVOT_CHK -->|"Hayır"| QA_SHEET
+    PIVOT_CHK -->|"Evet ✅"| DETAIL["📊 _detailed_type_summary(df)<br/>Kategori × Malzeme × Tip kırılımı"]
+    DETAIL --> DETAIL_CHK{"Detay sonucu<br/>boş mu?"}
+    DETAIL_CHK -->|"Hayır"| SHEET2["📄 Sheet 2: Detaylı Metraj"]
+    DETAIL_CHK -->|"Evet"| COST_CHK
+    SHEET2 --> FMT2["🎨 _autowidth + _format_sheet"]
+    FMT2 --> COST_CHK
+    
+    %% ═══ SEKME 3 ═══
+    COST_CHK{"cost_ sütunu<br/>var mı?"}
+    COST_CHK -->|"Evet"| SHEET3["📄 Sheet 3: Maliyet Özeti<br/>_cost_summary()"]
+    COST_CHK -->|"Hayır"| QA_SHEET
+    SHEET3 --> FMT3["🎨 _autowidth + _format_sheet"]
+    FMT3 --> QA_SHEET
+    
+    %% ═══ SEKME 4 ═══
+    QA_SHEET{"quality dict<br/>mevcut mu?"}
+    QA_SHEET -->|"Evet"| SHEET4["📄 Sheet 4: Veri Kalitesi<br/>_qa_df(quality)"]
+    QA_SHEET -->|"Hayır"| EXP_END
+    SHEET4 --> FMT4["🎨 _autowidth + _format_sheet"]
+    FMT4 --> EXP_END
+    
+    EXP_END(["🟢 Excel Yazma Tamamlandı"])
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef sheet fill:#2c3e50,stroke:#2980b9,color:#ecf0f1,stroke-width:2px
+
+    class EXP_START,EXP_END startEnd
+    class SHEET1,SHEET2,SHEET3,SHEET4 sheet
+```
+
+---
+
+## 10. Sayfa Formatlama Alt Süreci (_format_sheet)
+
+```mermaid
+flowchart TD
+    FMT_START(["🎨 _format_sheet()"])
+    FMT_START --> STYLE_CHK{"openpyxl.styles<br/>kurulu mu?"}
+    STYLE_CHK -->|"Hayır"| FMT_SKIP["⏭️ Formatlama atla"]
+    STYLE_CHK -->|"Evet ✅"| HDR_FMT["📋 Başlık satırı formatla:<br/>• Mavi arka plan 2F5496<br/>• Beyaz kalın font<br/>• Ortalanmış<br/>• İnce kenarlık"]
+    HDR_FMT --> FREEZE["❄️ Başlık satırını sabitle<br/>freeze_panes = A2"]
+    FREEZE --> ROW_CHK{"Satır sayısı<br/>> 5000?"}
+    ROW_CHK -->|"Evet ⚠️"| PERF_SKIP["⚡ Performans koruması:<br/>Sadece başlık formatlandı<br/>Hücre formatlama atlandı"]
+    ROW_CHK -->|"Hayır ✅"| DATA_FMT["🎨 Veri satırları formatla:<br/>• İnce kenarlık<br/>• Calibri 10pt<br/>• Sayısal format #,##0.00<br/>• Zebra renklendirme"]
+    
+    PERF_SKIP --> FMT_END(["🟢 Format Tamamlandı"])
+    DATA_FMT --> FMT_END
+    FMT_SKIP --> FMT_END
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+
+    class FMT_START,FMT_END startEnd
+```
+
+---
+
+## 11. Karşılaştırma Süreci (comparator.py)
+
+`export_comparison()` ve ilişkili fonksiyonların akışı:
+
+```mermaid
+flowchart TD
+    CMP_START(["⚖️ export_comparison()<br/>dfs, output_path"])
+    
+    CMP_START --> CMP_CALL["compare(dfs)<br/>Karşılaştırma tablosu oluştur"]
+    CMP_START --> PSET_CALL["compare_psets(dfs)<br/>Pset doluluk karşılaştırması"]
+    CMP_START --> FLAG_CALL["flag_large_diffs(comp)<br/>Büyük sapmaları tespit et"]
+    
+    %% ═══ COMPARE FONKSİYONU ═══
+    CMP_CALL --> CMP_AGG["🔄 Her dosya için:<br/>_aggregate(df, group_cols)<br/>element_type + level bazında<br/>topla"]
+    CMP_AGG --> CMP_KEYS["Tüm grup anahtarlarını<br/>birleştir union"]
+    CMP_KEYS --> CMP_ROW_LOOP["🔄 Her anahtar için:<br/>Her dosyadan adet, alan,<br/>hacim, uzunluk çek"]
+    CMP_ROW_LOOP --> CMP_DIFF["📊 Tüm çift kombinasyonları<br/>arasında sapma hesapla:<br/>diff = B - A / A × 100"]
+    
+    %% ═══ PSET COMPARE ═══
+    PSET_CALL --> PSET_LOOP["🔄 Her dosya için:<br/>Quantity ve Property<br/>doluluk yüzdelerini hesapla"]
+    
+    %% ═══ FLAG LARGE DIFFS ═══
+    FLAG_CALL --> FLAG_FILTER["🔍 Sapma > eşik değer 5 pct<br/>olan satırları filtrele"]
+    FLAG_FILTER --> FLAG_SORT["📊 max_sapma_pct'ye göre<br/>azalan sırala"]
+    
+    %% ═══ EXCEL YAZMA ═══
+    CMP_DIFF --> EXCEL_WRITE
+    PSET_LOOP --> EXCEL_WRITE
+    FLAG_SORT --> EXCEL_WRITE
+    
+    EXCEL_WRITE["📊 Çok Sekmeli Excel Yaz"]
+    EXCEL_WRITE --> S1["📄 Sheet: Karşılaştırma<br/>Tüm sapma tablosu"]
+    EXCEL_WRITE --> S2["📄 Sheet: Pset Kapsamı<br/>Doluluk yüzdeleri"]
+    EXCEL_WRITE --> S3_CHK{"Büyük sapma<br/>var mı?"}
+    S3_CHK -->|"Evet"| S3["📄 Sheet: Büyük Sapmalar<br/>Eşik aşan sapmalar"]
+    S3_CHK -->|"Hayır"| S4
+    S3 --> S4
+    EXCEL_WRITE --> S4["📄 Sheet: Her dosya için<br/>özet sayfası"]
+    
+    S1 --> CMP_END(["🟢 Karşılaştırma Tamamlandı"])
+    S2 --> CMP_END
+    S4 --> CMP_END
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef sheet fill:#2c3e50,stroke:#2980b9,color:#ecf0f1,stroke-width:2px
+
+    class CMP_START,CMP_END startEnd
+    class S1,S2,S3,S4 sheet
+```
+
+---
+
+## 12. Hata Yönetimi Genel Haritası
+
+Yazılımdaki tüm hata yakalama ve geri dönüş noktalarının özeti:
+
+```mermaid
+flowchart TD
+    ERR_TITLE(["🛡️ HATA YÖNETİMİ HARİTASI"])
+    
+    ERR_TITLE --> LAYER1["Katman 1: Giriş Doğrulama"]
+    ERR_TITLE --> LAYER2["Katman 2: Dosya İşlemleri"]
+    ERR_TITLE --> LAYER3["Katman 3: Veri Çıkarma"]
+    ERR_TITLE --> LAYER4["Katman 4: Dönüşüm ve Export"]
+    
+    %% ═══ KATMAN 1: GİRİŞ DOĞRULAMA ═══
+    LAYER1 --> V1["❌ Config dosyası yok<br/>→ sys.exit 1"]
+    LAYER1 --> V2["❌ YAML parse hatası<br/>→ sys.exit 1"]
+    LAYER1 --> V3["❌ Config boş<br/>→ sys.exit 1"]
+    LAYER1 --> V4["❌ element_types eksik<br/>→ sys.exit 1"]
+    LAYER1 --> V5["❌ Compare: 2'den az dosya<br/>→ sys.exit 1"]
+    LAYER1 --> V6["❌ tkinter yok<br/>→ return mesaj ile"]
+    LAYER1 --> V7["❌ Dosya seçilmedi<br/>→ return mesaj ile"]
+    
+    %% ═══ KATMAN 2: DOSYA İŞLEMLERİ ═══
+    LAYER2 --> F1["💥 FileNotFoundError<br/>Dosya bulunamadı<br/>→ Exception fırlat"]
+    LAYER2 --> F2["💥 RuntimeError<br/>IFC açılamadı<br/>→ Exception fırlat"]
+    LAYER2 --> F3["⚠️ Dosya > 500MB<br/>→ logger.warning<br/>işlem devam eder"]
+    LAYER2 --> F4["🛡️ Çıktı dosyası mevcut<br/>→ Otomatik yeniden adlandır<br/>_safe_output_path()"]
+    
+    %% ═══ KATMAN 3: VERİ ÇIKARMA ═══
+    LAYER3 --> E1["⚠️ IfcApplication okunamadı<br/>→ logger.debug<br/>varsayılan kullan"]
+    LAYER3 --> E2["⚠️ Birim tespit hatası<br/>→ logger.error<br/>varsayılan Metre"]
+    LAYER3 --> E3["⚠️ Element çıkarma hatası<br/>→ logger.warning<br/>element atlanır"]
+    LAYER3 --> E4["⚠️ Quantity okunamadı<br/>→ logger.warning<br/>None döner"]
+    LAYER3 --> E5["⚠️ Malzeme okunamadı<br/>→ logger.warning<br/>boş liste"]
+    LAYER3 --> E6["⚠️ Kat bilgisi okunamadı<br/>→ logger.debug<br/>boş string"]
+    
+    %% ═══ KATMAN 4: DÖNÜŞÜM/EXPORT ═══
+    LAYER4 --> D1["⚠️ Sütun tip dönüşümü<br/>başarısız<br/>→ logger.warning<br/>orijinal tip kalır"]
+    LAYER4 --> D2["⚠️ Sayfa formatlama<br/>hatası<br/>→ logger.warning<br/>formatsız devam"]
+    LAYER4 --> D3["⚡ 5000'den fazla satır<br/>→ Hücre formatlama atlanır<br/>performans koruması"]
+    LAYER4 --> D4["⚠️ safe_convert<br/>TypeError/ValueError<br/>→ None döner"]
+
+    %% ═══ STİLLER ═══
+    classDef title fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:3px
+    classDef layer fill:#2c3e50,stroke:#3498db,color:#ecf0f1,stroke-width:2px
+    classDef fatal fill:#c0392b,stroke:#e74c3c,color:#fff,stroke-width:1px
+    classDef warn fill:#e67e22,stroke:#f39c12,color:#fff,stroke-width:1px
+    classDef safe fill:#27ae60,stroke:#2ecc71,color:#fff,stroke-width:1px
+
+    class ERR_TITLE title
+    class LAYER1,LAYER2,LAYER3,LAYER4 layer
+    class V1,V2,V3,V4,V5,F1,F2 fatal
+    class V6,V7,F3,E1,E2,E3,E4,E5,E6,D1,D2,D4 warn
+    class F4,D3 safe
+```
+
+---
+
+## 13. Property/Quantity Fallback Zinciri (properties.py)
+
+Farklı yazılımlar için veri arama stratejisi:
+
+```mermaid
+flowchart TD
+    FB_START(["🔗 Fallback Zinciri Mantığı"])
+    
+    FB_START --> FB_EXPLAIN["📖 Aynı veri, farklı yazılımlarda<br/>farklı Pset/Qto isimlerinde saklanır"]
+    
+    FB_EXPLAIN --> FB_LOOP["🔄 fallback_chain döngüsü:<br/>pset1-prop1, pset2-prop2, ..."]
+    
+    FB_LOOP --> FB_TRY1{"psets pset_name<br/>mevcut mu?"}
+    FB_TRY1 -->|"Hayır"| FB_NEXT1["Sonraki çifti dene"]
+    FB_TRY1 -->|"Evet"| FB_PROP1{"pset prop_name<br/>mevcut ve<br/>None değil mi?"}
+    FB_PROP1 -->|"Evet ✅"| FB_FOUND["✅ İlk bulunan değeri döndür"]
+    FB_PROP1 -->|"Hayır"| FB_NEXT1
+    
+    FB_NEXT1 --> FB_MORE{"Daha fazla<br/>çift var mı?"}
+    FB_MORE -->|"Evet"| FB_LOOP
+    FB_MORE -->|"Hayır"| FB_NONE["❌ None döndür<br/>hiçbir kaynakta bulunamadı"]
+    
+    %% ═══ ÖRNEK ZİNCİR ═══
+    FB_FOUND --> FB_EX["📋 Örnek: Alan için arama sırası"]
+    FB_EX --> EX1["1️⃣ Qto_WallBaseQuantities.GrossSideArea<br/>Revit IFC4"]
+    EX1 --> EX2["2️⃣ Qto_WallBaseQuantities.NetSideArea<br/>Alternatif"]
+    EX2 --> EX3["3️⃣ BaseQuantities.GrossSideArea<br/>Revit IFC2x3"]
+    EX3 --> EX4["4️⃣ BaseQuantities.NetSideArea<br/>Revit IFC2x3 alternatif"]
+
+    %% ═══ STİLLER ═══
+    classDef startEnd fill:#1a1a2e,stroke:#e94560,color:#fff,stroke-width:2px
+    classDef found fill:#27ae60,stroke:#2ecc71,color:#fff,stroke-width:2px
+    classDef notfound fill:#c0392b,stroke:#e74c3c,color:#fff,stroke-width:1px
+
+    class FB_START startEnd
+    class FB_FOUND found
+    class FB_NONE notfound
+```
+
+---
+
+## 14. Modül Bağımlılık Haritası
+
+Yazılımdaki modüller arası veri akışı:
+
+```mermaid
+flowchart LR
+    MAIN["🚀 main.py<br/>CLI ve İnteraktif"]
+    
+    MAIN --> LOADER["📂 loader.py<br/>IFC Yükleme<br/>+ Yazılım Tespiti"]
+    MAIN --> UNITS["📐 units.py<br/>Birim Tespiti<br/>+ SI Dönüşüm"]
+    MAIN --> EXTRACTOR["🏗️ extractor.py<br/>Element Çıkarma"]
+    MAIN --> NORMALIZER["📊 normalizer.py<br/>DataFrame<br/>+ Kalite Raporu"]
+    MAIN --> EXPORTER["📤 exporter.py<br/>Excel / JSON"]
+    MAIN --> COMPARATOR["⚖️ comparator.py<br/>Dosya Karşılaştırma"]
+    
+    EXTRACTOR --> UNITS
+    EXTRACTOR --> PROPERTIES["🏷️ properties.py<br/>Pset/Qset/Malzeme<br/>Okuma"]
+    
+    COMPARATOR --> EXPORTER
+    
+    CONFIG["⚙️ config/<br/>mapping.yaml"]
+    CONFIG -.->|"fallback zincirleri<br/>element tipleri<br/>IFC sınıfları"| LOADER
+    CONFIG -.-> EXTRACTOR
+
+    %% ═══ STİLLER ═══
+    classDef main fill:#e94560,stroke:#1a1a2e,color:#fff,stroke-width:2px
+    classDef module fill:#16213e,stroke:#0f3460,color:#eee,stroke-width:1px
+    classDef config fill:#f39c12,stroke:#e67e22,color:#1a1a2e,stroke-width:2px
+
+    class MAIN main
+    class LOADER,UNITS,EXTRACTOR,NORMALIZER,EXPORTER,COMPARATOR,PROPERTIES module
+    class CONFIG config
+```
