@@ -1,0 +1,286 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# IFC Pipeline — Mapping Configuration
+# Her element tipi için ifc_classes, quantity_sets, property_sets tanımlanır.
+# Yazılım farklılıkları fallback zincirleriyle absorbe edilir.
+# ─────────────────────────────────────────────────────────────────────────────
+
+element_types:
+
+  wall:
+    ifc_classes:
+      - IfcWall
+      - IfcWallStandardCase
+      - IfcWallElementedCase
+    quantity_sets:
+      area:
+        - [Qto_WallBaseQuantities, GrossSideArea]
+        - [Qto_WallBaseQuantities, NetSideArea]
+        - [BaseQuantities, GrossSideArea]
+        - [BaseQuantities, NetSideArea]
+      volume:
+        - [Qto_WallBaseQuantities, GrossVolume]
+        - [Qto_WallBaseQuantities, NetVolume]
+        - [BaseQuantities, GrossVolume]
+        - [BaseQuantities, NetVolume]
+      length:
+        - [Qto_WallBaseQuantities, Length]
+        - [BaseQuantities, Length]
+      height:
+        - [Qto_WallBaseQuantities, Height]
+        - [BaseQuantities, Height]
+    property_sets:
+      is_external:
+        - [Pset_WallCommon, IsExternal]
+      fire_rating:
+        - [Pset_WallCommon, FireRating]
+      load_bearing:
+        - [Pset_WallCommon, LoadBearing]
+
+  beam:
+    ifc_classes:
+      - IfcBeam
+      - IfcBeamStandardCase
+    quantity_sets:
+      length:
+        - [Qto_BeamBaseQuantities, Length]
+        - [BaseQuantities, Length]
+      volume:
+        - [Qto_BeamBaseQuantities, GrossVolume]
+        - [Qto_BeamBaseQuantities, NetVolume]
+        - [BaseQuantities, GrossVolume]
+      cross_section_area:
+        - [Qto_BeamBaseQuantities, CrossSectionArea]
+        - [BaseQuantities, CrossSectionArea]
+    property_sets:
+      structural_material:
+        - [Pset_BeamCommon, Material]
+        - [Tekla Common, MATERIAL]
+
+  column:
+    ifc_classes:
+      - IfcColumn
+      - IfcColumnStandardCase
+    quantity_sets:
+      length:
+        - [Qto_ColumnBaseQuantities, Length]
+        - [BaseQuantities, Length]
+      volume:
+        - [Qto_ColumnBaseQuantities, GrossVolume]
+        - [Qto_ColumnBaseQuantities, NetVolume]
+        - [BaseQuantities, GrossVolume]
+    property_sets:
+      is_external:
+        - [Pset_ColumnCommon, IsExternal]
+      load_bearing:
+        - [Pset_ColumnCommon, LoadBearing]
+
+  slab:
+    ifc_classes:
+      - IfcSlab
+    quantity_sets:
+      area:
+        - [Qto_SlabBaseQuantities, GrossArea]
+        - [Qto_SlabBaseQuantities, NetArea]
+        - [BaseQuantities, GrossArea]
+        - [BaseQuantities, NetArea]
+      volume:
+        - [Qto_SlabBaseQuantities, GrossVolume]
+        - [Qto_SlabBaseQuantities, NetVolume]
+        - [BaseQuantities, GrossVolume]
+      thickness:
+        - [Qto_SlabBaseQuantities, Depth]
+        - [BaseQuantities, Depth]
+    property_sets:
+      is_external:
+        - [Pset_SlabCommon, IsExternal]
+      load_bearing:
+        - [Pset_SlabCommon, LoadBearing]
+      fire_rating:
+        - [Pset_SlabCommon, FireRating]
+
+  door:
+    ifc_classes:
+      - IfcDoor
+    quantity_sets:
+      area:
+        - [Qto_DoorBaseQuantities, Area]
+        - [BaseQuantities, Area]
+      width:
+        - [Qto_DoorBaseQuantities, Width]
+        - [BaseQuantities, Width]
+      height:
+        - [Qto_DoorBaseQuantities, Height]
+        - [BaseQuantities, Height]
+    property_sets:
+      fire_rating:
+        - [Pset_DoorCommon, FireRating]
+
+  window:
+    ifc_classes:
+      - IfcWindow
+    quantity_sets:
+      area:
+        - [Qto_WindowBaseQuantities, Area]
+        - [BaseQuantities, Area]
+    property_sets:
+      thermal_transmittance:
+        - [Pset_WindowCommon, ThermalTransmittance]
+
+  member:
+    ifc_classes:
+      - IfcMember
+      - IfcMemberStandardCase
+    quantity_sets:
+      length:
+        - [Qto_MemberBaseQuantities, Length]
+        - [BaseQuantities, Length]
+      volume:
+        - [Qto_MemberBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+    property_sets:
+      profile:
+        - [Tekla Common, PROFILE]
+
+  footing:
+    ifc_classes:
+      - IfcFooting
+    quantity_sets:
+      volume:
+        - [Qto_FootingBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+      area:
+        - [Qto_FootingBaseQuantities, GrossArea]
+        - [BaseQuantities, GrossArea]
+
+  pile:
+    ifc_classes:
+      - IfcPile
+    quantity_sets:
+      length:
+        - [Qto_PileBaseQuantities, Length]
+        - [BaseQuantities, Length]
+      volume:
+        - [Qto_PileBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+
+  stair:
+    ifc_classes:
+      - IfcStair
+      - IfcStairFlight
+    quantity_sets:
+      area:
+        - [Qto_StairBaseQuantities, GrossFloorArea]
+        - [BaseQuantities, GrossFloorArea]
+      volume:
+        - [Qto_StairBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+
+  roof:
+    ifc_classes:
+      - IfcRoof
+    quantity_sets:
+      area:
+        - [Qto_RoofBaseQuantities, GrossArea]
+        - [BaseQuantities, GrossArea]
+      volume:
+        - [Qto_RoofBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+
+  # ─── Yeni Eklenen Element Tipleri ─────────────────────────────────────────
+
+  curtain_wall:
+    ifc_classes:
+      - IfcCurtainWall
+    quantity_sets:
+      area:
+        - [Qto_CurtainWallBaseQuantities, GrossSideArea]
+        - [BaseQuantities, GrossSideArea]
+        - [Qto_CurtainWallBaseQuantities, NetSideArea]
+      length:
+        - [Qto_CurtainWallBaseQuantities, Length]
+        - [BaseQuantities, Length]
+    property_sets:
+      is_external:
+        - [Pset_CurtainWallCommon, IsExternal]
+      fire_rating:
+        - [Pset_CurtainWallCommon, FireRating]
+
+  railing:
+    ifc_classes:
+      - IfcRailing
+    quantity_sets:
+      length:
+        - [Qto_RailingBaseQuantities, Length]
+        - [BaseQuantities, Length]
+    property_sets:
+      is_external:
+        - [Pset_RailingCommon, IsExternal]
+
+  ramp:
+    ifc_classes:
+      - IfcRamp
+      - IfcRampFlight
+    quantity_sets:
+      area:
+        - [Qto_RampBaseQuantities, GrossArea]
+        - [BaseQuantities, GrossArea]
+      volume:
+        - [Qto_RampBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+    property_sets:
+      is_external:
+        - [Pset_RampCommon, IsExternal]
+      fire_rating:
+        - [Pset_RampCommon, FireRating]
+
+  covering:
+    ifc_classes:
+      - IfcCovering
+    quantity_sets:
+      area:
+        - [Qto_CoveringBaseQuantities, GrossArea]
+        - [BaseQuantities, GrossArea]
+      volume:
+        - [Qto_CoveringBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+      thickness:
+        - [Qto_CoveringBaseQuantities, Width]
+        - [BaseQuantities, Width]
+    property_sets:
+      fire_rating:
+        - [Pset_CoveringCommon, FireRating]
+
+  plate:
+    ifc_classes:
+      - IfcPlate
+    quantity_sets:
+      area:
+        - [Qto_PlateBaseQuantities, GrossArea]
+        - [Qto_PlateBaseQuantities, NetArea]
+        - [BaseQuantities, GrossArea]
+      volume:
+        - [Qto_PlateBaseQuantities, GrossVolume]
+        - [BaseQuantities, GrossVolume]
+      thickness:
+        - [Qto_PlateBaseQuantities, Width]
+        - [BaseQuantities, Width]
+    property_sets:
+      profile:
+        - [Tekla Common, PROFILE]
+
+# ─── Yazılım-spesifik Pset ön ekleri ────────────────────────────────────────
+# Kullanım: Vendor-spesifik property set'leri filtreleme/gruplayarak raporlama
+vendor_pset_prefixes:
+  revit:
+    - "Revit "
+    - "REVIT_"
+  tekla:
+    - "Tekla "
+    - "TEKLA_"
+    - "TeklaBIM"
+  archicad:
+    - "ArchiCAD "
+    - "ARCHICAD_"
+    - "AC_Pset"
+  allplan:
+    - "Allplan "
