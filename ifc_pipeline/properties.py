@@ -136,14 +136,21 @@ def get_all_quantities(element) -> dict[str, dict[str, float]]:
     return result
 
 
-def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None) -> Optional[float]:
+def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None,
+                 psets: dict = None) -> Optional[float]:
     """
     Fallback zincirini kullanarak bir quantity değeri arar.
 
+    Önce IfcElementQuantity set'lerine (qsets) bakar; bulamazsa
+    IfcPropertySet'lere (psets) düşer. Bu, Tekla gibi bazı yazılımların
+    quantity verilerini (Length, Weight vb.) property set içinde
+    sakladığı durumları kapsar.
+
     Args:
         element: IFC element
-        fallback_chain: [[qset_adı, qty_adı], ...] listesi
-        qsets: Önceden çekilmiş qset dict'i (cache için)
+        fallback_chain: [[set_adı, değer_adı], ...] listesi
+        qsets: Önceden çekilmiş quantity set dict'i (cache için)
+        psets: Önceden çekilmiş property set dict'i (pset fallback için)
 
     Returns:
         Ham sayısal değer (birimsiz), hiçbiri bulunamazsa None.
@@ -151,12 +158,29 @@ def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None) -
     """
     if qsets is None:
         qsets = get_all_quantities(element)
+
+    # 1. Önce quantity set'lerde ara
     for qset_name, qty_name in fallback_chain:
         qset = qsets.get(qset_name, {})
         if qty_name in qset:
             val = qset[qty_name]
             if val is not None and val > 0:
                 return float(val)
+
+    # 2. Quantity set'lerde bulunamadıysa property set'lere bak
+    if psets is not None:
+        for pset_name, prop_name in fallback_chain:
+            pset = psets.get(pset_name, {})
+            if isinstance(pset, dict) and prop_name in pset:
+                val = pset[prop_name]
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        if fval > 0:
+                            return fval
+                    except (TypeError, ValueError):
+                        continue
+
     return None
 
 

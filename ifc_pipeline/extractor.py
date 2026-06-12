@@ -100,12 +100,12 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
 
     phase = get_phase(element, psets=psets)
 
-    # Quantity'leri cache'den oku
-    area_raw      = get_quantity(element, qsets_config.get("area", []),      qsets=qsets)
-    volume_raw    = get_quantity(element, qsets_config.get("volume", []),    qsets=qsets)
-    length_raw    = get_quantity(element, qsets_config.get("length", []),    qsets=qsets)
+    # Quantity'leri cache'den oku (psets fallback ile — Tekla Quantity desteği)
+    area_raw      = get_quantity(element, qsets_config.get("area", []),      qsets=qsets, psets=psets)
+    volume_raw    = get_quantity(element, qsets_config.get("volume", []),    qsets=qsets, psets=psets)
+    length_raw    = get_quantity(element, qsets_config.get("length", []),    qsets=qsets, psets=psets)
     thickness_raw = get_quantity(element, qsets_config.get("thickness", []) or
-                                          qsets_config.get("height", []),   qsets=qsets)
+                                          qsets_config.get("height", []),   qsets=qsets, psets=psets)
 
     area_m2     = safe_convert(area_raw,      ctx.units.area)
     volume_m3   = safe_convert(volume_raw,    ctx.units.volume)

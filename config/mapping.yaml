@@ -254,6 +254,10 @@ element_types:
     ifc_classes:
       - IfcPlate
     quantity_sets:
+      length:
+        - [Qto_PlateBaseQuantities, Length]
+        - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       area:
         - [Qto_PlateBaseQuantities, GrossArea]
         - [Qto_PlateBaseQuantities, NetArea]

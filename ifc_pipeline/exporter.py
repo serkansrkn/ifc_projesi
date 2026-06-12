@@ -92,9 +92,19 @@ def _prep(df):
         elif hasattr(df[col], "cat"):
             df[col] = df[col].astype(str)
     
-    # Sayısal alanları temizle (virgülden sonra çok uzamasını engelle)
+    # Sütun bazlı yuvarlama — hacim küçük plakalarda hassasiyet gerektirir
+    PRECISION = {
+        "volume_m3":       9,   # 0.000152063 → ağırlık hesabı için kritik
+        "thickness_m":     6,   # 0.015000
+        "area_m2":         6,   # 0.015000
+        "length_m":        6,   # 0.150000
+        "level_elevation": 3,   # 0.650
+    }
+    DEFAULT_PRECISION = 4
+
     for col in df.select_dtypes(include="float").columns:
-        df[col] = df[col].round(4)
+        precision = PRECISION.get(col, DEFAULT_PRECISION)
+        df[col] = df[col].round(precision)
     return df
 
 
@@ -275,8 +285,13 @@ def to_json(df, output_path, orient="records"):
     """DataFrame'i JSON formatında dışa aktarır."""
     # NaN → None, boş string → None (tutarlılık)
     clean = df.copy()
+    # Sütun bazlı yuvarlama (Excel ile tutarlı)
+    PRECISION = {
+        "volume_m3": 9, "thickness_m": 6, "area_m2": 6,
+        "length_m": 6, "level_elevation": 3,
+    }
     for col in clean.select_dtypes(include="float").columns:
-        clean[col] = clean[col].round(6)
+        clean[col] = clean[col].round(PRECISION.get(col, 6))
     for col in clean.select_dtypes(include="object").columns:
         clean[col] = clean[col].replace("", None)
     clean = clean.where(clean.notna(), other=None)
