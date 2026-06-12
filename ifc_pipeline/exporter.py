@@ -135,7 +135,7 @@ def _autowidth(writer: Any, sheet_name: str, df: pd.DataFrame) -> None:
                 sample = df[col].head(1000) if len(df) > 1000 else df[col]
                 try:
                     max_data_len = sample.astype(str).str.len().max()
-                except Exception:
+                except (TypeError, ValueError, AttributeError):
                     max_data_len = 10
                 mx = max(header_len, int(max_data_len) if pd.notna(max_data_len) else header_len)
 
