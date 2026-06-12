@@ -1,0 +1,34 @@
+# Git & CI/CD
+.git
+.gitignore
+.pytest_cache
+__pycache__
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Python
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+
+# Docs / Reports (konteynerda gereksiz)
+*.pdf
+*.md
+!README.md
+
+# Çıktı dosyaları
+output/
+*.xlsx
+*.json
+
+# Test
+tests/

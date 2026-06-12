@@ -34,3 +34,17 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Çıktı dizini
+output/
+!output/.gitkeep
+
+# Streamlit cache
+.streamlit/__pycache__/
+
+# Docker
+.docker/
+
+# Docs — screenshots takip edilir
+!docs/screenshots/*.png
+

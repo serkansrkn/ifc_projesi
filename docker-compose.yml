@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# IFC Pipeline — Docker Compose
+# Tek komutla: docker compose up
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  ifc-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ifc-pipeline-app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Config dosyasını dışarıdan yönetmek isterseniz:
+      # - ./config:/app/config:ro
+      # Çıktı dosyaları için (opsiyonel):
+      - ./output:/app/output
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_THEME_BASE=dark
+    restart: unless-stopped
+    # Bellek limiti (büyük IFC dosyaları için artırılabilir)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
