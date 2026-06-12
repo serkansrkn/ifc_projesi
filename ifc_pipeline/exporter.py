@@ -37,7 +37,19 @@ if HAS_STYLES:
     )
     DATA_FONT = Font(name="Calibri", size=10)  # Tek seferlik oluştur
     ALT_ROW_FILL = PatternFill(start_color="F2F7FB", end_color="F2F7FB", fill_type="solid")
-    NUMBER_FORMAT_2 = "#,##0.00"
+    # Sütun bazlı sayı formatları (ham veri + Türkçe özet sütunları)
+    NUMBER_FORMATS = {
+        "volume_m3":       "#,##0.000000000",  # 9 hane — ağırlık hesabı için kritik
+        "area_m2":         "#,##0.000000",     # 6 hane
+        "length_m":        "#,##0.000000",     # 6 hane
+        "thickness_m":     "#,##0.000000",     # 6 hane
+        "level_elevation": "#,##0.000",        # 3 hane
+        # Detaylı Metraj sekmesindeki Türkçe sütunlar
+        "Hacim (m3)":      "#,##0.000000000",  # 9 hane
+        "Alan (m2)":       "#,##0.000000",     # 6 hane
+        "Uzunluk (m)":     "#,##0.000000",     # 6 hane
+    }
+    NUMBER_FORMAT_DEFAULT = "#,##0.00"
 
 # Hücre-bazlı formatlama eşiği — bu satır sayısının üzerinde
 # sadece başlık formatlanır, veri satırları stilsiz bırakılır.
@@ -164,20 +176,20 @@ def _format_sheet(writer, sheet_name, df):
             )
             return
 
-        # Sayısal sütun indekslerini önceden tespit et
-        float_col_indices = set()
+        # Sayısal sütun indekslerini ve formatlarını önceden tespit et
+        col_number_formats = {}
         for i, col in enumerate(df.columns):
             if df[col].dtype in ("float64", "float32"):
-                float_col_indices.add(i)
+                col_number_formats[i] = NUMBER_FORMATS.get(col, NUMBER_FORMAT_DEFAULT)
 
         for row_idx in range(2, ws.max_row + 1):
             is_alt_row = (row_idx % 2 == 0)
             for col_idx, cell in enumerate(ws[row_idx]):
                 cell.border = THIN_BORDER
                 cell.font = DATA_FONT  # Modül seviyesinde oluşturulmuş nesne
-                # Sayısal sütunlara format uygula
-                if col_idx in float_col_indices:
-                    cell.number_format = NUMBER_FORMAT_2
+                # Sütun bazlı sayı formatı uygula
+                if col_idx in col_number_formats:
+                    cell.number_format = col_number_formats[col_idx]
                 # Zebra renklendirme
                 if is_alt_row:
                     cell.fill = ALT_ROW_FILL
@@ -217,9 +229,9 @@ def _detailed_type_summary(df):
             "Malzeme (Material)": str(material),
             "Tip Adı (Type)": str(type_name),
             "Adet": len(sub),
-            "Alan (m2)": round(sub["area_m2"].sum(skipna=True), 2) if ("area_m2" in sub.columns and sub["area_m2"].notna().any()) else None,
-            "Hacim (m3)": round(sub["volume_m3"].sum(skipna=True), 2) if ("volume_m3" in sub.columns and sub["volume_m3"].notna().any()) else None,
-            "Uzunluk (m)": round(sub["length_m"].sum(skipna=True), 2) if ("length_m" in sub.columns and sub["length_m"].notna().any()) else None,
+            "Alan (m2)": round(sub["area_m2"].sum(skipna=True), 6) if ("area_m2" in sub.columns and sub["area_m2"].notna().any()) else None,
+            "Hacim (m3)": round(sub["volume_m3"].sum(skipna=True), 9) if ("volume_m3" in sub.columns and sub["volume_m3"].notna().any()) else None,
+            "Uzunluk (m)": round(sub["length_m"].sum(skipna=True), 6) if ("length_m" in sub.columns and sub["length_m"].notna().any()) else None,
         })
         
     result = pd.DataFrame(groups)
