@@ -5,7 +5,7 @@ Tum yazilim variantlarini (IfcWall, IfcWallStandardCase vb.) yakalar.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import logging
 import ifcopenshell
@@ -17,6 +17,7 @@ from .properties import (
     get_material_names, get_type_name,
     get_all_psets, get_all_quantities,
 )
+from .normalizer import _to_boolean
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ class ExtractionContext:
     units: UnitFactors
     source_software: str
     source_filename: str
+    psets_cache: dict = field(default_factory=dict)
+    qsets_cache: dict = field(default_factory=dict)
+    type_name_cache: dict = field(default_factory=dict)
 
 
 def get_storey(element, ifc: ifcopenshell.file):
@@ -93,7 +97,13 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
     global_id = getattr(element, "GlobalId", "") or ""
     name      = getattr(element, "Name", "") or ""
     ifc_class = element.is_a()
-    type_name = get_type_name(element, ctx.ifc)
+
+    # Type name caching — performance improvement
+    elem_id = element.id()
+    type_name = ctx.type_name_cache.get(elem_id)
+    if not type_name:
+        type_name = get_type_name(element, ctx.ifc)
+        ctx.type_name_cache[elem_id] = type_name
 
     level_name, level_elev_raw = get_storey(element, ctx.ifc)
     level_elev_m = safe_convert(level_elev_raw, ctx.units.length) if level_elev_raw is not None else None
@@ -117,10 +127,9 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
     load_bearing = get_property(element, psets_config.get("load_bearing", []), psets=psets)
     fire_rating  = get_property(element, psets_config.get("fire_rating", []),  psets=psets)
 
-    if isinstance(is_external, str):
-        is_external = is_external.lower() in ("true", "1", "yes", "evet")
-    if isinstance(load_bearing, str):
-        load_bearing = load_bearing.lower() in ("true", "1", "yes", "evet")
+    # Boolean dönüşümü: normalizer._to_boolean() ile tutarlı, None/edge cases handled
+    is_external  = _to_boolean(is_external)
+    load_bearing = _to_boolean(load_bearing)
 
     materials = get_material_names(element)
 
@@ -169,6 +178,7 @@ def extract_all(ifc, config, units, source_software, source_filename, element_fi
     element_types_config = config.get("element_types", {})
     rows = []
     stats = {}
+    seen_global_ids = set()  # KRITIK: Gerçek GlobalId duplicate kontrolü
 
     for elem_type, elem_config in element_types_config.items():
         if element_filter and elem_type not in element_filter:
@@ -176,12 +186,12 @@ def extract_all(ifc, config, units, source_software, source_filename, element_fi
 
         ifc_classes = elem_config.get("ifc_classes", [])
         type_rows = []
-        seen_ids = set()  # ayni element iki farkli class'ta gorundugunde tekrar sayma
 
         for ifc_class in ifc_classes:
             try:
                 elements = ifc.by_type(ifc_class, include_subtypes=False)
-            except Exception:
+            except (AttributeError, KeyError) as e:
+                logger.debug(f"IFC sınıfı {ifc_class} bulunamadı: {e}")
                 continue
 
             # tqdm varsa ilerleme göster
@@ -190,14 +200,20 @@ def extract_all(ifc, config, units, source_software, source_filename, element_fi
                 iterator = tqdm(elements, desc=f"  {ifc_class}", leave=False)
 
             for element in iterator:
-                # BUG-2 düzeltmesi: tüm işlem try bloğu içinde
+                # BUG-2 düzeltmesi: GlobalId duplicate kontrolü
                 try:
                     if element.is_a("IfcTypeProduct"):
                         continue
-                    eid = element.id()
-                    if eid in seen_ids:
+
+                    # ← KRITIK DÜZELTME: GlobalId kontrolü (element.id() değil!)
+                    global_id = getattr(element, "GlobalId", None)
+                    if not global_id:
+                        logger.warning(f"Element {ifc_class}:{element.id()} GlobalId yok")
                         continue
-                    seen_ids.add(eid)
+                    if global_id in seen_global_ids:
+                        logger.debug(f"Duplicate GlobalId skip: {global_id}")
+                        continue
+                    seen_global_ids.add(global_id)
 
                     row = extract_element(
                         element=element,

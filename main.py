@@ -38,7 +38,7 @@ def setup_logging(verbose: bool = False):
 
 
 def load_config() -> dict:
-    """Config dosyasını yükler ve temel validasyon yapar."""
+    """Config dosyasını yükler ve kapsamlı validasyon yapar."""
     if not os.path.isfile(CONFIG_PATH):
         print(f"❌ Config dosyası bulunamadı: {CONFIG_PATH}")
         sys.exit(1)
@@ -54,9 +54,44 @@ def load_config() -> dict:
         print("❌ Config dosyası boş.")
         sys.exit(1)
 
+    # ── Temel yapı kontrolü ──────────────────────────────────────────────────
     if "element_types" not in config:
         print("❌ Config dosyasında 'element_types' anahtarı bulunamadı.")
         sys.exit(1)
+
+    element_types = config["element_types"]
+    if not isinstance(element_types, dict) or not element_types:
+        print("❌ 'element_types' boş dict veya dict değil.")
+        sys.exit(1)
+
+    # ── Element type yapısı kontrolü ─────────────────────────────────────────
+    for elem_type, elem_config in element_types.items():
+        if not isinstance(elem_config, dict):
+            print(f"❌ element_types.{elem_type} bir dict değil.")
+            sys.exit(1)
+
+        if "ifc_classes" not in elem_config:
+            print(f"❌ element_types.{elem_type}: 'ifc_classes' eksik.")
+            sys.exit(1)
+
+        ifc_classes = elem_config["ifc_classes"]
+        if not isinstance(ifc_classes, list) or not ifc_classes:
+            print(f"❌ element_types.{elem_type}.ifc_classes list değil veya boş.")
+            sys.exit(1)
+
+        # Quantity sets kontrolü (varsa validate et)
+        if "quantity_sets" in elem_config:
+            qty_sets = elem_config["quantity_sets"]
+            if not isinstance(qty_sets, dict):
+                print(f"❌ element_types.{elem_type}.quantity_sets dict değil.")
+                sys.exit(1)
+
+        # Property sets kontrolü (varsa validate et)
+        if "property_sets" in elem_config:
+            prop_sets = elem_config["property_sets"]
+            if not isinstance(prop_sets, dict):
+                print(f"❌ element_types.{elem_type}.property_sets dict değil.")
+                sys.exit(1)
 
     return config
 

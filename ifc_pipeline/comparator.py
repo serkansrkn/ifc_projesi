@@ -8,7 +8,7 @@ import logging
 import pandas as pd
 import numpy as np
 from itertools import combinations
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,8 @@ def compare(dfs: dict, include_type_name: bool = False) -> pd.DataFrame:
     """
     if len(dfs) < 2:
         raise ValueError("En az 2 dosya gerekli")
+
+    logger.info(f"Karşılaştırıyor: {len(dfs)} dosya — {list(dfs.keys())}")
 
     group_cols = ["element_type", "level"]
     if include_type_name:
@@ -57,7 +59,9 @@ def compare(dfs: dict, include_type_name: bool = False) -> pd.DataFrame:
 
         rows.append(row)
 
-    return pd.DataFrame(rows)
+    comp_result = pd.DataFrame(rows)
+    logger.info(f"Karşılaştırma tamamlandı: {len(comp_result)} satır, {len(comp_result.columns)} sütun")
+    return comp_result
 
 
 def _aggregate(df: pd.DataFrame, group_cols: list[str]) -> dict:
@@ -83,7 +87,7 @@ def _aggregate(df: pd.DataFrame, group_cols: list[str]) -> dict:
     return result
 
 
-def _ss(df, col):
+def _ss(df: pd.DataFrame, col: str) -> Optional[float]:
     """Sütun toplamını güvenli şekilde hesaplar."""
     if col not in df.columns:
         return None
@@ -156,7 +160,7 @@ def export_comparison(dfs: dict, output_path: str, include_type_name: bool = Fal
     logger.info("Karşılaştırma yazıldı: %s", output_path)
 
 
-def _summary(df, label):
+def _summary(df: pd.DataFrame, label: Any) -> pd.DataFrame:
     """Kaynak bazlı özet tablo üretir."""
     rows = []
     for et, sub in df.groupby("element_type", observed=True):

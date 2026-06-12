@@ -93,10 +93,11 @@ def load(path: str, config: dict = None) -> tuple[ifcopenshell.file, IFCFileInfo
         (ifc_file, info) tuple'ı
     Raises:
         FileNotFoundError: Dosya yoksa
-        RuntimeError: Geçersiz IFC dosyasıysa
+        ValueError: Geçersiz IFC dosyası
+        RuntimeError: IFC parse başarısız
     """
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Dosya bulunamadı: {path}")
+    # ── Dosya bütünlüğü kontrolü ──────────────────────────────────────────────
+    _validate_ifc_file(path)
 
     # Dosya boyutu kontrolü
     file_size_bytes = os.path.getsize(path)
@@ -110,7 +111,11 @@ def load(path: str, config: dict = None) -> tuple[ifcopenshell.file, IFCFileInfo
     try:
         ifc = ifcopenshell.open(path)
     except Exception as e:
-        raise RuntimeError(f"IFC açılamadı: {path}\n{e}")
+        raise RuntimeError(f"IFC parse başarısız: {path}\n{e}") from e
+
+    # ── Schema kontrolü ───────────────────────────────────────────────────────
+    if not ifc.schema:
+        raise ValueError(f"IFC schema belirlenemedi — dosya corrupt olabilir: {path}")
 
     filename = os.path.basename(path)
     schema   = ifc.schema  # "IFC2X3", "IFC4" vb.
@@ -176,6 +181,41 @@ def load(path: str, config: dict = None) -> tuple[ifcopenshell.file, IFCFileInfo
 
 
 # ─── Yardımcı fonksiyonlar ────────────────────────────────────────────────────
+
+def _validate_ifc_file(path: str) -> None:
+    """
+    IFC dosya bütünlüğünü ve formatını kontrol eder.
+
+    Raises:
+        FileNotFoundError: Dosya yoksa
+        ValueError: Dosya format kontrolünde başarısız
+    """
+    # 1. Dosya varlığı kontrolü
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Dosya bulunamadı: {path}")
+
+    # 2. Uzantı kontrolü
+    if not path.lower().endswith('.ifc'):
+        raise ValueError(f"Geçersiz dosya uzantısı — IFC dosyası olmalı: {path}")
+
+    # 3. Dosya boyutu sanity check
+    file_size = os.path.getsize(path)
+    if file_size == 0:
+        raise ValueError(f"Boş dosya: {path}")
+    if file_size > 1e9:  # 1 GB
+        raise ValueError(f"Dosya çok büyük ({file_size/1e6:.1f}MB) — 1GB sınırını aşıyor: {path}")
+
+    # 4. Magic bytes kontrolü — ISO-10303-21 (ASCII) veya ISO-10303-28 (Binary) IFC formatı
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(50)
+            if not (header.startswith(b'ISO-10303-21') or header.startswith(b'ISO-10303-28')):
+                raise ValueError(f"Geçersiz IFC dosya formatı — ISO-10303 header bulunamadı: {path}")
+    except (IOError, OSError) as e:
+        raise RuntimeError(f"Dosya okunamadı: {path}\n{e}") from e
+
+    logger.debug(f"IFC dosya validasyonu tamamlandı: {path}")
+
 
 def _get_application_info(ifc: ifcopenshell.file) -> tuple[str, str, str]:
     """IfcApplication ve IfcOrganization'dan yazılım bilgisini çeker."""
@@ -274,6 +314,6 @@ def _count_physical_elements(ifc: ifcopenshell.file, config: dict = None) -> dic
             items = ifc.by_type(cls, include_subtypes=False)
             if items:
                 counts[cls] = len(items)
-        except Exception:
-            pass
+        except (AttributeError, KeyError):
+            logger.debug(f"IFC sınıfı {cls} sayılanamadı — schema'da eksik olabilir")
     return counts

@@ -101,8 +101,10 @@ def _to_boolean(x):
 def to_dataframe(rows: list[dict]) -> pd.DataFrame:
     """Ham row listesini temiz, tiplendirilmiş DataFrame'e dönüştürür."""
     if not rows:
+        logger.warning("Boş row listesi — boş DataFrame dönülüyor")
         return pd.DataFrame(columns=list(SCHEMA.keys()))
 
+    logger.info(f"DataFrame oluşturuluyor: {len(rows)} satır")
     df = pd.DataFrame(rows)
 
     for col in SCHEMA:
@@ -138,7 +140,9 @@ def to_dataframe(rows: list[dict]) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].where(df[col] > 0, other=np.nan)
 
-    return df.reset_index(drop=True)
+    result = df.reset_index(drop=True)
+    logger.info(f"DataFrame oluşturuldu: {len(result)} satır, {len(result.columns)} sütun")
+    return result
 
 
 def quality_report(df: pd.DataFrame) -> dict:
@@ -171,18 +175,22 @@ def quality_report(df: pd.DataFrame) -> dict:
     dup_ids  = df["global_id"].duplicated().sum()
     if dup_ids > 0:
         warnings.append(f"GlobalId tekrari: {dup_ids} adet")
+        logger.warning(f"Duplicate GlobalId detected: {dup_ids}")
 
     no_level = (df["level"] == "").sum()
     if no_level > 0:
         warnings.append(f"{no_level} element katsiz geldi")
+        logger.warning(f"Elements without level: {no_level}")
 
-    return {
+    report = {
         "total":              total,
         "by_type":            by_type,
         "missing_quantities": missing_quantities,
         "coverage":           coverage,
         "warnings":           warnings,
     }
+    logger.info(f"Veri kalitesi raporu: {len(warnings)} uyarı")
+    return report
 
 
 def add_cost_columns(

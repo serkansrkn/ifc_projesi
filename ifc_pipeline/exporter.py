@@ -11,7 +11,7 @@ import json
 import logging
 import pandas as pd
 import numpy as np
-from typing import Optional
+from typing import Optional, Any
 
 try:
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
@@ -57,7 +57,7 @@ if HAS_STYLES:
 MAX_ROWS_FOR_CELL_STYLING = 5000
 
 
-def to_excel(df, output_path, quality=None, include_pivot=True):
+def to_excel(df: pd.DataFrame, output_path: str, quality: dict[str, Any] | None = None, include_pivot: bool = True) -> None:
     """Ana Excel export fonksiyonu — çok sekmeli, formatlanmış rapor."""
     logger.info("Excel yazılıyor: %s (%d satır)", output_path, len(df))
 
@@ -95,7 +95,7 @@ def to_excel(df, output_path, quality=None, include_pivot=True):
     logger.info("Excel yazma tamamlandı: %s", output_path)
 
 
-def _prep(df):
+def _prep(df: pd.DataFrame) -> pd.DataFrame:
     """Excel'e yazmadan önce boolean ve float değerleri temizler."""
     df = df.copy()
     for col in df.columns:
@@ -120,7 +120,7 @@ def _prep(df):
     return df
 
 
-def _autowidth(writer, sheet_name, df):
+def _autowidth(writer: Any, sheet_name: str, df: pd.DataFrame) -> None:
     """Excel sütun genişliklerini içeriğe göre otomatik ayarlar."""
     try:
         ws = writer.sheets[sheet_name]
@@ -144,7 +144,7 @@ def _autowidth(writer, sheet_name, df):
         logger.debug("Sütun genişliği ayarlanamadı (%s): %s", sheet_name, e)
 
 
-def _format_sheet(writer, sheet_name, df):
+def _format_sheet(writer: Any, sheet_name: str, df: pd.DataFrame) -> None:
     """
     Excel sayfasına profesyonel formatlama uygular.
     
@@ -198,9 +198,9 @@ def _format_sheet(writer, sheet_name, df):
         logger.warning("Sayfa formatlanamadı (%s): %s", sheet_name, e)
 
 
-def _detailed_type_summary(df):
+def _detailed_type_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Sadece 'wall' veya 'column' demek yerine, Tip Adı ve Malzeme kırılımı 
+    Sadece 'wall' veya 'column' demek yerine, Tip Adı ve Malzeme kırılımı
     yaparak alt toplamları verir (Gerçek metraj mantığı).
     """
     groups = []
@@ -240,7 +240,7 @@ def _detailed_type_summary(df):
     return result
 
 
-def _cost_summary(df, cost_col="cost_TL"):
+def _cost_summary(df: pd.DataFrame, cost_col: str = "cost_TL") -> pd.DataFrame:
     """Maliyetleri detaylı şekilde özetler."""
     groups = []
     # Sadece gerekli sütunları kopyala
@@ -277,7 +277,7 @@ def _cost_summary(df, cost_col="cost_TL"):
     return result
 
 
-def _qa_df(quality):
+def _qa_df(quality: dict[str, Any]) -> pd.DataFrame:
     """Veri kalitesi özetini tabloya dönüştürür."""
     rows = [{"Metrik": "Toplam Element", "Deger": quality.get("total", 0), "Detay": ""}]
     for et, cnt in quality.get("by_type", {}).items():
@@ -293,7 +293,7 @@ def _qa_df(quality):
     return pd.DataFrame(rows)
 
 
-def to_json(df, output_path, orient="records"):
+def to_json(df: pd.DataFrame, output_path: str, orient: str = "records") -> None:
     """DataFrame'i JSON formatında dışa aktarır."""
     # NaN → None, boş string → None (tutarlılık)
     clean = df.copy()
