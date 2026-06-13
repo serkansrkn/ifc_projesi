@@ -8,7 +8,7 @@ import logging
 import pandas as pd
 import numpy as np
 from itertools import combinations
-from typing import Optional, Any
+from typing import Optional, Any, Union, BinaryIO
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,14 @@ def flag_large_diffs(comp_df: pd.DataFrame, threshold_pct: float = 5.0) -> pd.Da
     return result
 
 
-def export_comparison(dfs: dict, output_path: str, include_type_name: bool = False) -> None:
-    """Karsilastirma sonuclarini cok sekmeli Excel'e yazar."""
+def export_comparison(dfs: dict, output_path: Union[str, BinaryIO], include_type_name: bool = False) -> None:
+    """Karsilastirma sonuclarini cok sekmeli Excel'e yazar.
+
+    Args:
+        dfs: {etiket: DataFrame} sözlüğü
+        output_path: Dosya yolu (str) veya BytesIO buffer (BinaryIO)
+        include_type_name: True ise type_name bazında kırılım yapar
+    """
     from .exporter import _autowidth, _format_sheet
     comp = compare(dfs, include_type_name=include_type_name)
     pset = compare_psets(dfs)

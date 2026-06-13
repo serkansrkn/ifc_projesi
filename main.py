@@ -20,7 +20,7 @@ from ifc_pipeline import (
     load, detect_units, extract_all,
     to_dataframe, quality_report, add_cost_columns,
     to_excel, to_json,
-    compare, compare_psets, export_comparison,
+    compare, export_comparison,
 )
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "mapping.yaml")

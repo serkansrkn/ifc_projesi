@@ -102,6 +102,19 @@ def detect_units(ifc: ifcopenshell.file) -> UnitFactors:
             volume_factor = length_factor ** 3
             logger.info("Hacim birimi tanımlanmamış — uzunluğun kübünden çıkarıldı: ×%.6f", volume_factor)
 
+        # Başarılı tespitte source_info güncelle
+        parts = []
+        if length_defined:
+            parts.append(f"Uzunluk: ×{length_factor}")
+        if area_defined:
+            parts.append(f"Alan: ×{area_factor}")
+        if volume_defined:
+            parts.append(f"Hacim: ×{volume_factor}")
+        if parts:
+            source_info = "IFC birim tespiti: " + ", ".join(parts)
+        elif not length_defined and not area_defined and not volume_defined:
+            source_info = "Birim tanımlı ama LENGTHUNIT/AREAUNIT/VOLUMEUNIT bulunamadı — varsayılan kullanılıyor"
+
     except Exception as e:
         logger.error("Birim tespitinde hata: %s", e)
         source_info = f"Hata: {e}"

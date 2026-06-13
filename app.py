@@ -305,14 +305,6 @@ def get_file_hash(uploaded_file) -> str:
     return hasher.hexdigest()
 
 
-def save_uploaded_file(uploaded_file) -> str:
-    """Yüklenen dosyayı geçici dizine kaydeder."""
-    tmp_dir = tempfile.mkdtemp()
-    tmp_path = os.path.join(tmp_dir, uploaded_file.name)
-    with open(tmp_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    return tmp_path
-
 
 @st.cache_data
 def generate_excel_bytes(_df: pd.DataFrame, quality: dict = None) -> bytes:
@@ -729,15 +721,11 @@ if mode == "📄 Tekli Metraj Çıkarma":
 
             # ── İndirme Butonları ────────────────────────────────────────
             st.markdown("### 💾 Rapor İndirme")
-            col1, col2 = st.columns(2)
 
             base_name = os.path.splitext(uploaded_file.name)[0]
 
-            # Excel ve JSON byte'larını önceden hazırla (cache'li)
-            excel_bytes = generate_excel_bytes(df, quality=qa)
-            json_bytes = generate_json_bytes(df)
-
-            with col1:
+            if output_format == "Excel (.xlsx)":
+                excel_bytes = generate_excel_bytes(df, quality=qa)
                 st.download_button(
                     label="📥 Excel Raporu İndir (.xlsx)",
                     data=excel_bytes,
@@ -745,8 +733,8 @@ if mode == "📄 Tekli Metraj Çıkarma":
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
-
-            with col2:
+            elif output_format == "JSON (.json)":
+                json_bytes = generate_json_bytes(df)
                 st.download_button(
                     label="📥 JSON Verisi İndir (.json)",
                     data=json_bytes,

@@ -52,6 +52,10 @@ element_types:
         - [Qto_BeamBaseQuantities, CrossSectionArea]
         - [BaseQuantities, CrossSectionArea]
     property_sets:
+      is_external:
+        - [Pset_BeamCommon, IsExternal]
+      load_bearing:
+        - [Pset_BeamCommon, LoadBearing]
       structural_material:
         - [Pset_BeamCommon, Material]
         - [Tekla Common, MATERIAL]
@@ -151,6 +155,11 @@ element_types:
       area:
         - [Qto_FootingBaseQuantities, GrossArea]
         - [BaseQuantities, GrossArea]
+    property_sets:
+      is_external:
+        - [Pset_FootingCommon, IsExternal]
+      load_bearing:
+        - [Pset_FootingCommon, LoadBearing]
 
   pile:
     ifc_classes:
@@ -162,6 +171,9 @@ element_types:
       volume:
         - [Qto_PileBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
+    property_sets:
+      load_bearing:
+        - [Pset_PileCommon, LoadBearing]
 
   stair:
     ifc_classes:

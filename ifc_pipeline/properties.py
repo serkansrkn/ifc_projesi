@@ -267,6 +267,10 @@ def get_type_name(element, ifc: ifcopenshell.file) -> str:
     """
     Elementin tip adını döner.
     Revit'te type name, Tekla'da profil kodu burada saklanır.
+
+    NOT: Element.Name fallback'i kasıtlı olarak kaldırılmıştır.
+    Element adını type name olarak kullanmak yanıltıcı metraj grupları oluşturur.
+    Tip adı bulunamazsa boş string döner — normalizer 'Belirsiz Tip' olarak etiketler.
     """
     try:
         # Yöntem 1: IfcRelDefinesByType ilişkisi
@@ -284,11 +288,6 @@ def get_type_name(element, ifc: ifcopenshell.file) -> str:
         obj_type = getattr(element, "ObjectType", None)
         if obj_type:
             return str(obj_type)
-
-        # Yöntem 3: Element.Name'in kendisi (bazı Archicad exportlarında)
-        elem_name = getattr(element, "Name", None)
-        if elem_name:
-            return str(elem_name)
 
     except Exception as e:
         logger.debug("Tip adı okunamadı (element #%s): %s",

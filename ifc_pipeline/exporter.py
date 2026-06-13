@@ -267,13 +267,14 @@ def _cost_summary(df: pd.DataFrame, cost_col: str = "cost_TL") -> pd.DataFrame:
     result = pd.DataFrame(groups)
     if not result.empty:
         cost_label = f"Toplam Maliyet ({cost_col.split('_')[-1]})"
-        result.loc[len(result)] = {
-            "Element Tipi": "GENEL", 
-            "Tip Adı": "TOPLAM", 
+        totals_row = pd.DataFrame([{
+            "Element Tipi": "GENEL",
+            "Tip Adı": "TOPLAM",
             "Adet": result["Adet"].sum(),
             "Birim Fiyat": None,
-            cost_label: result[cost_label].sum()
-        }
+            cost_label: result[cost_label].sum(),
+        }])
+        result = pd.concat([result, totals_row], ignore_index=True)
     return result
 
 
@@ -304,7 +305,9 @@ def to_json(df: pd.DataFrame, output_path: str, orient: str = "records") -> None
     }
     for col in clean.select_dtypes(include="float").columns:
         clean[col] = clean[col].round(PRECISION.get(col, 6))
-    for col in clean.select_dtypes(include="object").columns:
+    # pandas 3 uyumu: hem "object" hem "string" dtype'ları yakala
+    str_cols = clean.select_dtypes(include=["object", "string"]).columns
+    for col in str_cols:
         clean[col] = clean[col].replace("", None)
     clean = clean.where(clean.notna(), other=None)
     records = clean.to_dict(orient=orient)
