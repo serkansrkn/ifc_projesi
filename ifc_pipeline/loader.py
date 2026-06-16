@@ -314,6 +314,6 @@ def _count_physical_elements(ifc: ifcopenshell.file, config: dict = None) -> dic
             items = ifc.by_type(cls, include_subtypes=False)
             if items:
                 counts[cls] = len(items)
-        except (AttributeError, KeyError):
+        except (AttributeError, KeyError, RuntimeError):
             logger.debug(f"IFC sınıfı {cls} sayılanamadı — schema'da eksik olabilir")
     return counts

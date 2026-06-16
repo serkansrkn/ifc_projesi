@@ -5,11 +5,8 @@ Property Set ve Quantity Set okuma modülü.
 Ana zorluk: Aynı veri farklı yazılımlarda farklı Pset/Qto isimlerinde saklanır.
 Çözüm: YAML config'den gelen fallback zincirleri — sırayla dener, ilk bulduğunu alır.
 
-Örnek fallback zinciri (alan için):
-    [Qto_WallBaseQuantities, GrossSideArea]  → Revit IFC4
-    [Qto_WallBaseQuantities, NetSideArea]    → alternatif
-    [BaseQuantities, GrossSideArea]          → Revit IFC2x3
-    [BaseQuantities, NetSideArea]            → Revit IFC2x3 alternatif
+Son çare (item-5 fallback): Zincir başarısız olduğunda generic isim taraması yapar.
+Bu Archicad, VectorWorks ve non-standard QSet isimleri kullanan yazılımları kapsar.
 """
 
 from __future__ import annotations
@@ -27,8 +24,6 @@ def get_all_psets(element) -> dict[str, dict[str, Any]]:
     """
     Bir elementin tüm property set'lerini döner.
     {pset_adı: {property_adı: değer}} formatında.
-
-    ifc_util.get_psets() üzerine sarıcı — hata toleranslı.
     """
     try:
         return ifc_util.get_psets(element) or {}
@@ -64,9 +59,6 @@ def get_property(element, fallback_chain: list[list[str]], psets: dict = None) -
 def get_all_properties_flat(element) -> dict[str, Any]:
     """
     Tüm property set'leri düz bir dict'e açar.
-    Çakışma durumunda sonraki pset öncekini ezer.
-    Debug ve inceleme için kullanışlı.
-
     Format: {"PsetAdi.PropAdi": değer, ...}
     """
     result = {}
@@ -83,13 +75,10 @@ def get_all_quantities(element) -> dict[str, dict[str, float]]:
     """
     Bir elementin tüm QuantitySet'lerini döner.
     {qset_adı: {quantity_adı: sayısal_değer}} formatında.
-
-    IfcElementQuantity → IfcPhysicalSimpleQuantity hiyerarşisini parse eder.
-    Değerler ham IFC birimi cinsinden döner — units.py ile dönüştürülmeli.
+    Değerler ham IFC birimi cinsinden döner.
     """
     result: dict[str, dict[str, float]] = {}
     try:
-        # Güvenli inverse attribute erişimi
         defined_by = getattr(element, "IsDefinedBy", None)
         if not defined_by:
             return result
@@ -142,9 +131,7 @@ def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None,
     Fallback zincirini kullanarak bir quantity değeri arar.
 
     Önce IfcElementQuantity set'lerine (qsets) bakar; bulamazsa
-    IfcPropertySet'lere (psets) düşer. Bu, Tekla gibi bazı yazılımların
-    quantity verilerini (Length, Weight vb.) property set içinde
-    sakladığı durumları kapsar.
+    IfcPropertySet'lere (psets) düşer.
 
     Args:
         element: IFC element
@@ -154,7 +141,6 @@ def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None,
 
     Returns:
         Ham sayısal değer (birimsiz), hiçbiri bulunamazsa None.
-        Birim dönüşümü çağıran tarafın sorumluluğunda.
     """
     if qsets is None:
         qsets = get_all_quantities(element)
@@ -167,7 +153,7 @@ def get_quantity(element, fallback_chain: list[list[str]], qsets: dict = None,
             if val is not None and val > 0:
                 return float(val)
 
-    # 2. Quantity set'lerde bulunamadıysa property set'lere bak
+    # 2. Property set'lerde ara (Tekla bazı değerleri pset içinde saklar)
     if psets is not None:
         for pset_name, prop_name in fallback_chain:
             pset = psets.get(pset_name, {})
@@ -188,13 +174,122 @@ def get_all_quantities_flat(element) -> dict[str, float]:
     """
     Tüm quantity set'leri düz dict'e açar.
     Format: {"QSetAdi.QtyAdi": değer, ...}
-    Debug için.
     """
     result = {}
     for qset_name, qtys in get_all_quantities(element).items():
         for qty_name, val in qtys.items():
             result[f"{qset_name}.{qty_name}"] = val
     return result
+
+
+# ─── Generic Fallback Tarayıcılar (item-5) ────────────────────────────────────
+
+# Quantity tipine göre aranacak generic isimler.
+# Öncelik sırasına göre dizilmiştir: önce net, sonra gross değerler.
+_GENERIC_QTY_NAMES: dict[str, list[str]] = {
+    "area": [
+        "NetArea", "GrossArea", "Area",
+        "NetSideArea", "GrossSideArea",
+        "NetFloorArea", "GrossFloorArea",
+        "GrossRoofArea", "NetRoofArea",
+        "GrossCoverArea", "NetCoverArea",
+    ],
+    "volume": [
+        "NetVolume", "GrossVolume", "Volume",
+        "NetBodyVolume", "GrossBodyVolume",
+    ],
+    "length": [
+        "Length", "NetLength", "OuterLength",
+        "Span", "OverallLength",
+    ],
+    "weight": [
+        # Standard IFC
+        "Weight", "NetWeight", "GrossWeight",
+        # Tekla
+        "WEIGHT_NET", "WEIGHT_GROSS", "WEIGHT",
+    ],
+}
+
+# PSet taramasında kullanılacak isimler (QSet taramasından daha dar tutulur)
+_GENERIC_PSET_NAMES: dict[str, list[str]] = {
+    "area":   ["Area", "GrossArea", "NetArea", "SurfaceArea"],
+    "volume": ["Volume", "GrossVolume", "NetVolume", "VOLUME"],
+    "length": ["Length", "NetLength", "LENGTH"],
+    "weight": ["Weight", "NetWeight", "GrossWeight", "WEIGHT", "WEIGHT_NET", "WEIGHT_GROSS"],
+}
+
+
+def scan_quantity_by_type(qsets: dict, quantity_type: str) -> Optional[float]:
+    """
+    Zincir araması başarısız olduğunda son çare: tüm QSet'leri generic
+    isimlerle tara. Archicad, VectorWorks ve non-standard QSet isimleri
+    kullanan yazılımlar için devreye girer.
+
+    Args:
+        qsets: get_all_quantities() çıktısı
+        quantity_type: "area" | "volume" | "length" | "weight"
+
+    Returns:
+        Ham sayısal değer veya None. Birim dönüşümü çağıran tarafın sorumluluğunda.
+    """
+    targets = _GENERIC_QTY_NAMES.get(quantity_type)
+    if not targets:
+        return None
+
+    # Önce tam isim eşleşmesi (ordered priority)
+    for target_name in targets:
+        for qset_name, qtys in qsets.items():
+            if not isinstance(qtys, dict):
+                continue
+            val = qtys.get(target_name)
+            if val is not None:
+                try:
+                    fval = float(val)
+                    if fval > 0:
+                        logger.debug(
+                            "Generic QSet scan [%s]: %s.%s = %.4f",
+                            quantity_type, qset_name, target_name, fval
+                        )
+                        return fval
+                except (TypeError, ValueError):
+                    continue
+    return None
+
+
+def scan_property_by_type(psets: dict, quantity_type: str) -> Optional[float]:
+    """
+    Tüm PSet'leri generic quantity isimlerinde tara.
+    Tekla gibi bazı yazılımlar quantity verilerini PSet içinde saklar.
+    scan_quantity_by_type()'dan sonra çağrılmalıdır.
+
+    Args:
+        psets: get_all_psets() çıktısı
+        quantity_type: "area" | "volume" | "length" | "weight"
+
+    Returns:
+        Ham sayısal değer veya None.
+    """
+    targets = _GENERIC_PSET_NAMES.get(quantity_type)
+    if not targets:
+        return None
+
+    for target_name in targets:
+        for pset_name, props in psets.items():
+            if not isinstance(props, dict):
+                continue
+            val = props.get(target_name)
+            if val is not None:
+                try:
+                    fval = float(val)
+                    if fval > 0:
+                        logger.debug(
+                            "Generic PSet scan [%s]: %s.%s = %.4f",
+                            quantity_type, pset_name, target_name, fval
+                        )
+                        return fval
+                except (TypeError, ValueError):
+                    continue
+    return None
 
 
 # ─── Materyal okuma ───────────────────────────────────────────────────────────
@@ -207,7 +302,6 @@ def get_material_names(element) -> list[str]:
     """
     materials = []
     try:
-        # Güvenli inverse attribute erişimi
         associations = getattr(element, "HasAssociations", None)
         if not associations:
             return materials
@@ -267,13 +361,8 @@ def get_type_name(element, ifc: ifcopenshell.file) -> str:
     """
     Elementin tip adını döner.
     Revit'te type name, Tekla'da profil kodu burada saklanır.
-
-    NOT: Element.Name fallback'i kasıtlı olarak kaldırılmıştır.
-    Element adını type name olarak kullanmak yanıltıcı metraj grupları oluşturur.
-    Tip adı bulunamazsa boş string döner — normalizer 'Belirsiz Tip' olarak etiketler.
     """
     try:
-        # Yöntem 1: IfcRelDefinesByType ilişkisi
         defined_by = getattr(element, "IsDefinedBy", None)
         if defined_by:
             for rel in defined_by:
@@ -284,7 +373,7 @@ def get_type_name(element, ifc: ifcopenshell.file) -> str:
                         if name:
                             return str(name)
 
-        # Yöntem 2: ObjectType attribute (Tekla'da kullanılır)
+        # ObjectType attribute (Tekla'da kullanılır)
         obj_type = getattr(element, "ObjectType", None)
         if obj_type:
             return str(obj_type)

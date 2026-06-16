@@ -1,6 +1,6 @@
 # ifc_pipeline/normalizer.py
 """
-Ham row listesini pandas DataFrame'e donusturur, temizler ve dogrular.
+Ham row listesini pandas DataFrame'e dönüştürür, temizler ve doğrular.
 """
 from __future__ import annotations
 import logging
@@ -26,12 +26,13 @@ SCHEMA = {
     "volume_m3":       "float64",
     "length_m":        "float64",
     "thickness_m":     "float64",
+    "weight_kg":       "float64",    # donatı, çelik profil, levha ağırlığı
     "materials":       "string",
     "source_software": "category",
     "source_file":     "string",
 }
 
-# Her element tipi icin hangi quantity bekleniyor
+# Her element tipi için hangi quantity bekleniyor
 EXPECTED_QUANTITIES = {
     "wall":         ["area_m2",   "volume_m3"],
     "beam":         ["length_m",  "volume_m3"],
@@ -49,9 +50,12 @@ EXPECTED_QUANTITIES = {
     "ramp":         ["area_m2"],
     "covering":     ["area_m2"],
     "plate":        ["area_m2",   "volume_m3"],
+    # Donatı ve hasır — ağırlık birincil metraj
+    "rebar":        ["length_m",  "weight_kg"],
+    "mesh":         ["area_m2",   "weight_kg"],
 }
 
-# Her element tipi icin maliyet hesabinda kullanilacak varsayilan quantity
+# Her element tipi için maliyet hesabında kullanılacak varsayılan quantity
 DEFAULT_QTY_COL = {
     "wall":         "area_m2",
     "beam":         "length_m",
@@ -69,12 +73,12 @@ DEFAULT_QTY_COL = {
     "ramp":         "area_m2",
     "covering":     "area_m2",
     "plate":        "area_m2",
+    "rebar":        "weight_kg",   # ton/kg cinsinden fiyatlandırma
+    "mesh":         "weight_kg",
 }
 
-# Boolean dönüşüm için bilinen True/False değerleri
 _TRUE_VALUES  = {"true", "1", "yes", "evet", "doğru", "dogru"}
 _FALSE_VALUES = {"false", "0", "no", "hayır", "hayir", "yanlış", "yanlis"}
-# String olarak "boş" kabul edilecek değerler
 _NULL_STRINGS = {"None", "none", "NONE", "N/A", "n/a", "nan", "NaN", "null", "NULL", ""}
 
 
@@ -136,7 +140,8 @@ def to_dataframe(rows: list[dict]) -> pd.DataFrame:
         except Exception as e:
             logger.warning("Sütun tip dönüşümü başarısız (%s → %s): %s", col, dtype, e)
 
-    for col in ["area_m2", "volume_m3", "length_m", "thickness_m"]:
+    # Negatif ve sıfır değerleri NaN'a çevir
+    for col in ["area_m2", "volume_m3", "length_m", "thickness_m", "weight_kg"]:
         if col in df.columns:
             df[col] = df[col].where(df[col] > 0, other=np.nan)
 
@@ -148,7 +153,7 @@ def to_dataframe(rows: list[dict]) -> pd.DataFrame:
 def quality_report(df: pd.DataFrame) -> dict:
     """Veri kalitesi raporu üretir: eksik metraj, duplicate ID, katsız element tespiti."""
     if df.empty:
-        return {"total": 0, "warnings": ["DataFrame bos"]}
+        return {"total": 0, "warnings": ["DataFrame boş"]}
 
     total    = len(df)
     warnings = []
@@ -169,17 +174,17 @@ def quality_report(df: pd.DataFrame) -> dict:
             pct = round(missing / n * 100)
             warnings.append(
                 f"{elem_type}: {n} elementten {missing} tanesinde (%{pct}) "
-                "metraj eksik — 'Export base quantities' kapali olabilir"
+                "metraj eksik — 'Export base quantities' kapalı olabilir"
             )
 
     dup_ids  = df["global_id"].duplicated().sum()
     if dup_ids > 0:
-        warnings.append(f"GlobalId tekrari: {dup_ids} adet")
+        warnings.append(f"GlobalId tekrarı: {dup_ids} adet")
         logger.warning(f"Duplicate GlobalId detected: {dup_ids}")
 
     no_level = (df["level"] == "").sum()
     if no_level > 0:
-        warnings.append(f"{no_level} element katsiz geldi")
+        warnings.append(f"{no_level} element katsız geldi")
         logger.warning(f"Elements without level: {no_level}")
 
     report = {
@@ -213,11 +218,9 @@ def add_cost_columns(
         qty_col_map.update(quantity_col_override)
 
     df = df.copy()
-    # Category tipini string'e çevir (map/== uyumluluğu için)
     et_str = df["element_type"].astype(str)
     df["unit_price"] = et_str.map(unit_prices)
 
-    # Vektörel yaklaşım — df.apply yerine (PERF-2 düzeltmesi)
     df["quantity_for_cost"] = np.nan
     for et, col in qty_col_map.items():
         if col in df.columns:

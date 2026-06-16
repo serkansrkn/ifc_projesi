@@ -4,6 +4,14 @@
 .pytest_cache
 __pycache__
 
+# Python bytecode — TÜM alt dizinlerde (recursive)
+# NOT: Dockerfile python:3.11 kullanır; yerel .pyc dosyaları (cpython-314)
+# Docker build içinde zaten geçersizdir. Yeniden derlemeyi geciktirmemek
+# için build context'e hiç alınmaması gerekir.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
 # IDE
 .vscode
 .idea
@@ -12,10 +20,9 @@ __pycache__
 
 # macOS
 .DS_Store
+**/.DS_Store
 
-# Python
-*.pyc
-*.pyo
+# Python packaging
 *.egg-info
 dist
 build

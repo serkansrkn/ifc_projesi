@@ -170,6 +170,8 @@ class TestExtractAll:
 class TestExtractionContext:
 
     def test_cache_initialization(self):
+        """psets_cache ve qsets_cache kaldırıldı (ölü kod, item-4).
+        type_name_cache korunuyor — IfcRelDefinesByType traversal'ı önler."""
         ctx = ExtractionContext(
             ifc=MockIFCFile(),
             config={},
@@ -177,9 +179,9 @@ class TestExtractionContext:
             source_software="revit",
             source_filename="test.ifc",
         )
-        assert ctx.psets_cache == {}
-        assert ctx.qsets_cache == {}
         assert ctx.type_name_cache == {}
+        assert not hasattr(ctx, "psets_cache"), "psets_cache ölü kod olarak kaldırılmıştır"
+        assert not hasattr(ctx, "qsets_cache"), "qsets_cache ölü kod olarak kaldırılmıştır"
 
     def test_type_name_cache(self):
         ctx = ExtractionContext(

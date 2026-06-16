@@ -43,11 +43,13 @@ if HAS_STYLES:
         "area_m2":         "#,##0.000000",     # 6 hane
         "length_m":        "#,##0.000000",     # 6 hane
         "thickness_m":     "#,##0.000000",     # 6 hane
+        "weight_kg":       "#,##0.000",        # 3 hane — donatı kg
         "level_elevation": "#,##0.000",        # 3 hane
         # Detaylı Metraj sekmesindeki Türkçe sütunlar
         "Hacim (m3)":      "#,##0.000000000",  # 9 hane
         "Alan (m2)":       "#,##0.000000",     # 6 hane
         "Uzunluk (m)":     "#,##0.000000",     # 6 hane
+        "Ağırlık (kg)":    "#,##0.000",        # donatı/çelik özet sütunu
     }
     NUMBER_FORMAT_DEFAULT = "#,##0.00"
 
@@ -110,6 +112,7 @@ def _prep(df: pd.DataFrame) -> pd.DataFrame:
         "thickness_m":     6,   # 0.015000
         "area_m2":         6,   # 0.015000
         "length_m":        6,   # 0.150000
+        "weight_kg":       3,   # 12.450 kg
         "level_elevation": 3,   # 0.650
     }
     DEFAULT_PRECISION = 4
@@ -206,7 +209,7 @@ def _detailed_type_summary(df: pd.DataFrame) -> pd.DataFrame:
     groups = []
     
     # Sadece gerekli sütunları kopyala (tüm DataFrame'i kopyalamak yerine)
-    needed_cols = ["element_type", "type_name", "materials", "area_m2", "volume_m3", "length_m"]
+    needed_cols = ["element_type", "type_name", "materials", "area_m2", "volume_m3", "length_m", "weight_kg"]
     existing_cols = [c for c in needed_cols if c in df.columns]
     df_copy = df[existing_cols].copy()
 
@@ -232,6 +235,7 @@ def _detailed_type_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Alan (m2)": round(sub["area_m2"].sum(skipna=True), 6) if ("area_m2" in sub.columns and sub["area_m2"].notna().any()) else None,
             "Hacim (m3)": round(sub["volume_m3"].sum(skipna=True), 9) if ("volume_m3" in sub.columns and sub["volume_m3"].notna().any()) else None,
             "Uzunluk (m)": round(sub["length_m"].sum(skipna=True), 6) if ("length_m" in sub.columns and sub["length_m"].notna().any()) else None,
+            "Ağırlık (kg)": round(sub["weight_kg"].sum(skipna=True), 3) if ("weight_kg" in sub.columns and sub["weight_kg"].notna().any()) else None,
         })
         
     result = pd.DataFrame(groups)

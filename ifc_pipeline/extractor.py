@@ -1,7 +1,7 @@
 # ifc_pipeline/extractor.py
 """
-IFC dosyasından element verilerini ceker ve normallestir.
-Tum yazilim variantlarini (IfcWall, IfcWallStandardCase vb.) yakalar.
+IFC dosyasından element verilerini çeker ve dönüştürür.
+Tüm yazılım variantlarını (IfcWall, IfcWallStandardCase vb.) yakalar.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from .properties import (
     get_property, get_quantity,
     get_material_names, get_type_name,
     get_all_psets, get_all_quantities,
+    scan_quantity_by_type, scan_property_by_type,
 )
 from .normalizer import _to_boolean
 
@@ -30,8 +31,10 @@ class ExtractionContext:
     units: UnitFactors
     source_software: str
     source_filename: str
-    psets_cache: dict = field(default_factory=dict)
-    qsets_cache: dict = field(default_factory=dict)
+    # type_name_cache: Her element ID → type_name; IfcRelDefinesByType traversal'ı
+    # her element için bir kez yapılır. Ölü kod temizliği: psets_cache ve
+    # qsets_cache alanları kaldırıldı — extract_element() zaten her element
+    # için psets/qsets'i tek seferde çekip lokal değişkende tutar.
     type_name_cache: dict = field(default_factory=dict)
 
 
@@ -82,15 +85,33 @@ def get_phase(element, psets: dict = None) -> str:
     return ""
 
 
+def _fallback_scan(
+    raw_value: Optional[float],
+    qsets: dict,
+    psets: dict,
+    quantity_type: str,
+) -> Optional[float]:
+    """
+    Zincir araması None döndürdüğünde generic QSet/PSet taraması yapar.
+    scan_quantity_by_type → scan_property_by_type sırasını takip eder.
+    """
+    if raw_value is not None:
+        return raw_value
+    result = scan_quantity_by_type(qsets, quantity_type)
+    if result is not None:
+        return result
+    return scan_property_by_type(psets, quantity_type)
+
+
 def extract_element(element, element_type, config, ctx: ExtractionContext):
     """
     Tek bir IFC elementinden tüm metraj verilerini çıkarır.
-    Pset ve Qset'ler element başına bir kez okunur (cache).
+    Pset ve Qset'ler element başına bir kez okunur.
     """
     qsets_config = config.get("quantity_sets", {})
     psets_config = config.get("property_sets", {})
 
-    # ── Pset ve Qset'leri bir kez çek (PERF-1 düzeltmesi) ──
+    # ── Pset ve Qset'leri bir kez çek ──────────────────────────────────────
     psets = get_all_psets(element)
     qsets = get_all_quantities(element)
 
@@ -98,10 +119,10 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
     name      = getattr(element, "Name", "") or ""
     ifc_class = element.is_a()
 
-    # Type name caching — performance improvement
+    # type_name cache — IfcRelDefinesByType traversal'ı her element için bir kez
     elem_id = element.id()
     type_name = ctx.type_name_cache.get(elem_id)
-    if not type_name:
+    if type_name is None:
         type_name = get_type_name(element, ctx.ifc)
         ctx.type_name_cache[elem_id] = type_name
 
@@ -110,24 +131,34 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
 
     phase = get_phase(element, psets=psets)
 
-    # Quantity'leri cache'den oku (psets fallback ile — Tekla Quantity desteği)
-    area_raw      = get_quantity(element, qsets_config.get("area", []),      qsets=qsets, psets=psets)
-    volume_raw    = get_quantity(element, qsets_config.get("volume", []),    qsets=qsets, psets=psets)
-    length_raw    = get_quantity(element, qsets_config.get("length", []),    qsets=qsets, psets=psets)
-    thickness_raw = get_quantity(element, qsets_config.get("thickness", []) or
-                                          qsets_config.get("height", []),   qsets=qsets, psets=psets)
+    # ── Quantity çekimi: zincir + generic fallback (item-5) ──────────────
+    area_raw      = get_quantity(element, qsets_config.get("area",      []), qsets=qsets, psets=psets)
+    volume_raw    = get_quantity(element, qsets_config.get("volume",    []), qsets=qsets, psets=psets)
+    length_raw    = get_quantity(element, qsets_config.get("length",    []), qsets=qsets, psets=psets)
+    thickness_raw = get_quantity(element,
+                                  qsets_config.get("thickness", []) or qsets_config.get("height", []),
+                                  qsets=qsets, psets=psets)
+    weight_raw    = get_quantity(element, qsets_config.get("weight",    []), qsets=qsets, psets=psets)
 
+    # Generic fallback — zincirde bulunamadıysa tüm QSet/PSet'leri tara
+    area_raw   = _fallback_scan(area_raw,   qsets, psets, "area")
+    volume_raw = _fallback_scan(volume_raw, qsets, psets, "volume")
+    length_raw = _fallback_scan(length_raw, qsets, psets, "length")
+    weight_raw = _fallback_scan(weight_raw, qsets, psets, "weight")
+    # thickness için fallback yok — genellikle modelde tanımsız olması normaldir
+
+    # ── Birim dönüşümü ────────────────────────────────────────────────────
     area_m2     = safe_convert(area_raw,      ctx.units.area)
     volume_m3   = safe_convert(volume_raw,    ctx.units.volume)
     length_m    = safe_convert(length_raw,    ctx.units.length)
     thickness_m = safe_convert(thickness_raw, ctx.units.length)
+    weight_kg   = safe_convert(weight_raw,    ctx.units.mass)
 
-    # Property'leri cache'den oku
-    is_external  = get_property(element, psets_config.get("is_external", []),  psets=psets)
+    # ── Property çekimi ──────────────────────────────────────────────────
+    is_external  = get_property(element, psets_config.get("is_external",  []), psets=psets)
     load_bearing = get_property(element, psets_config.get("load_bearing", []), psets=psets)
-    fire_rating  = get_property(element, psets_config.get("fire_rating", []),  psets=psets)
+    fire_rating  = get_property(element, psets_config.get("fire_rating",  []), psets=psets)
 
-    # Boolean dönüşümü: normalizer._to_boolean() ile tutarlı, None/edge cases handled
     is_external  = _to_boolean(is_external)
     load_bearing = _to_boolean(load_bearing)
 
@@ -149,6 +180,7 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
         "volume_m3":       volume_m3,
         "length_m":        length_m,
         "thickness_m":     thickness_m,
+        "weight_kg":       weight_kg,
         "materials":       ", ".join(materials) if materials else "",
         "source_software": ctx.source_software,
         "source_file":     ctx.source_filename,
@@ -157,10 +189,9 @@ def extract_element(element, element_type, config, ctx: ExtractionContext):
 
 def extract_all(ifc, config, units, source_software, source_filename, element_filter=None):
     """
-    Tum element tiplerini ceker.
+    Tüm element tiplerini çeker.
     Returns: (rows_list, stats_dict)
     """
-    # tqdm'i opsiyonel olarak import et
     try:
         from tqdm import tqdm
         has_tqdm = True
@@ -178,7 +209,7 @@ def extract_all(ifc, config, units, source_software, source_filename, element_fi
     element_types_config = config.get("element_types", {})
     rows = []
     stats = {}
-    seen_global_ids = set()  # KRITIK: Gerçek GlobalId duplicate kontrolü
+    seen_global_ids = set()
 
     for elem_type, elem_config in element_types_config.items():
         if element_filter and elem_type not in element_filter:
@@ -190,22 +221,19 @@ def extract_all(ifc, config, units, source_software, source_filename, element_fi
         for ifc_class in ifc_classes:
             try:
                 elements = ifc.by_type(ifc_class, include_subtypes=False)
-            except (AttributeError, KeyError) as e:
+            except (AttributeError, KeyError, RuntimeError) as e:
                 logger.debug(f"IFC sınıfı {ifc_class} bulunamadı: {e}")
                 continue
 
-            # tqdm varsa ilerleme göster
             iterator = elements
             if has_tqdm and len(elements) > 100:
                 iterator = tqdm(elements, desc=f"  {ifc_class}", leave=False)
 
             for element in iterator:
-                # BUG-2 düzeltmesi: GlobalId duplicate kontrolü
                 try:
                     if element.is_a("IfcTypeProduct"):
                         continue
 
-                    # ← KRITIK DÜZELTME: GlobalId kontrolü (element.id() değil!)
                     global_id = getattr(element, "GlobalId", None)
                     if not global_id:
                         logger.warning(f"Element {ifc_class}:{element.id()} GlobalId yok")

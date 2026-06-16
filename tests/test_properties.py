@@ -283,3 +283,80 @@ class TestGetTypeName:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ─── Generic Scan Fallback testleri (item-5) ──────────────────────────────────
+
+class TestScanQuantityByType:
+    """scan_quantity_by_type — generic QSet tarama testleri."""
+
+    def test_area_standard_name(self):
+        qsets = {"SomeRandomQSet": {"GrossArea": 25.0}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "area")
+        assert abs(result - 25.0) < 1e-6
+
+    def test_area_netarea(self):
+        qsets = {"ArchiCAD_BaseQ": {"NetArea": 18.5}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "area")
+        assert abs(result - 18.5) < 1e-6
+
+    def test_volume_netvolume(self):
+        qsets = {"CustomQSet": {"NetVolume": 2.4}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "volume")
+        assert abs(result - 2.4) < 1e-6
+
+    def test_length_span(self):
+        qsets = {"VectorWorksQ": {"Span": 6.0}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "length")
+        assert abs(result - 6.0) < 1e-6
+
+    def test_weight_tekla_net(self):
+        qsets = {"Tekla Rebar": {"WEIGHT_NET": 12.5}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "weight")
+        assert abs(result - 12.5) < 1e-6
+
+    def test_returns_none_if_not_found(self):
+        qsets = {"SomeQSet": {"SomeOtherQty": 99.0}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "area")
+        assert result is None
+
+    def test_ignores_zero_and_negative(self):
+        qsets = {"QSet": {"Area": 0.0, "GrossArea": -5.0, "NetArea": 10.0}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "area")
+        # 0 ve negatif atlanır, NetArea = 10.0 alınır
+        assert abs(result - 10.0) < 1e-6
+
+    def test_unknown_quantity_type(self):
+        qsets = {"QSet": {"SomeValue": 5.0}}
+        from ifc_pipeline.properties import scan_quantity_by_type
+        result = scan_quantity_by_type(qsets, "unknown_type")
+        assert result is None
+
+
+class TestScanPropertyByType:
+    """scan_property_by_type — generic PSet tarama testleri."""
+
+    def test_weight_in_pset(self):
+        psets = {"Tekla Common": {"WEIGHT": 8.3}}
+        from ifc_pipeline.properties import scan_property_by_type
+        result = scan_property_by_type(psets, "weight")
+        assert abs(result - 8.3) < 1e-6
+
+    def test_volume_in_pset(self):
+        psets = {"CustomPset": {"VOLUME": 0.45}}
+        from ifc_pipeline.properties import scan_property_by_type
+        result = scan_property_by_type(psets, "volume")
+        assert abs(result - 0.45) < 1e-6
+
+    def test_returns_none_for_missing(self):
+        psets = {"SomePset": {"Material": "Concrete"}}
+        from ifc_pipeline.properties import scan_property_by_type
+        result = scan_property_by_type(psets, "area")
+        assert result is None

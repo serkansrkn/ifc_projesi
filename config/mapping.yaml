@@ -2,6 +2,12 @@
 # IFC Pipeline — Mapping Configuration
 # Her element tipi için ifc_classes, quantity_sets, property_sets tanımlanır.
 # Yazılım farklılıkları fallback zincirleriyle absorbe edilir.
+#
+# Fallback zinciri okuma sırası:
+#   1. quantity_sets (IfcElementQuantity)   → önce standart Qto isimleri
+#   2. property_sets (IfcPropertySet)       → QSet bulunamadığında
+#   3. scan_quantity_by_type()              → extractor.py generic tarama
+#   4. scan_property_by_type()             → son çare, tüm Pset'leri tara
 # ─────────────────────────────────────────────────────────────────────────────
 
 element_types:
@@ -17,14 +23,20 @@ element_types:
         - [Qto_WallBaseQuantities, NetSideArea]
         - [BaseQuantities, GrossSideArea]
         - [BaseQuantities, NetSideArea]
+        # Tekla — bazı versiyonlar quantity'yi Tekla Quantity içine yazar
+        - [Tekla Quantity, Area]
+        - [Tekla Quantity, Net area]
       volume:
         - [Qto_WallBaseQuantities, GrossVolume]
         - [Qto_WallBaseQuantities, NetVolume]
         - [BaseQuantities, GrossVolume]
         - [BaseQuantities, NetVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
       length:
         - [Qto_WallBaseQuantities, Length]
         - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       height:
         - [Qto_WallBaseQuantities, Height]
         - [BaseQuantities, Height]
@@ -44,10 +56,18 @@ element_types:
       length:
         - [Qto_BeamBaseQuantities, Length]
         - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       volume:
         - [Qto_BeamBaseQuantities, GrossVolume]
         - [Qto_BeamBaseQuantities, NetVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
+      weight:
+        # Tekla çelik kirişler için ağırlık
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+        - [Tekla Common, WEIGHT]
       cross_section_area:
         - [Qto_BeamBaseQuantities, CrossSectionArea]
         - [BaseQuantities, CrossSectionArea]
@@ -59,6 +79,10 @@ element_types:
       structural_material:
         - [Pset_BeamCommon, Material]
         - [Tekla Common, MATERIAL]
+      profile:
+        - [Tekla Common, PROFILE]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   column:
     ifc_classes:
@@ -68,15 +92,28 @@ element_types:
       length:
         - [Qto_ColumnBaseQuantities, Length]
         - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       volume:
         - [Qto_ColumnBaseQuantities, GrossVolume]
         - [Qto_ColumnBaseQuantities, NetVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
+      weight:
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+        - [Tekla Common, WEIGHT]
     property_sets:
       is_external:
         - [Pset_ColumnCommon, IsExternal]
       load_bearing:
         - [Pset_ColumnCommon, LoadBearing]
+      profile:
+        - [Tekla Common, PROFILE]
+      structural_material:
+        - [Tekla Common, MATERIAL]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   slab:
     ifc_classes:
@@ -87,10 +124,14 @@ element_types:
         - [Qto_SlabBaseQuantities, NetArea]
         - [BaseQuantities, GrossArea]
         - [BaseQuantities, NetArea]
+        - [Tekla Quantity, Area]
+        - [Tekla Quantity, Net area]
       volume:
         - [Qto_SlabBaseQuantities, GrossVolume]
         - [Qto_SlabBaseQuantities, NetVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
       thickness:
         - [Qto_SlabBaseQuantities, Depth]
         - [BaseQuantities, Depth]
@@ -101,6 +142,8 @@ element_types:
         - [Pset_SlabCommon, LoadBearing]
       fire_rating:
         - [Pset_SlabCommon, FireRating]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   door:
     ifc_classes:
@@ -138,12 +181,25 @@ element_types:
       length:
         - [Qto_MemberBaseQuantities, Length]
         - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       volume:
         - [Qto_MemberBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
+      weight:
+        # Çelik profile ağırlığı — maliyet hesabında ton cinsinden
+        - [Qto_MemberBaseQuantities, Weight]
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+        - [Tekla Common, WEIGHT]
     property_sets:
       profile:
         - [Tekla Common, PROFILE]
+      structural_material:
+        - [Tekla Common, MATERIAL]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   footing:
     ifc_classes:
@@ -152,14 +208,19 @@ element_types:
       volume:
         - [Qto_FootingBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
       area:
         - [Qto_FootingBaseQuantities, GrossArea]
         - [BaseQuantities, GrossArea]
+        - [Tekla Quantity, Area]
     property_sets:
       is_external:
         - [Pset_FootingCommon, IsExternal]
       load_bearing:
         - [Pset_FootingCommon, LoadBearing]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   pile:
     ifc_classes:
@@ -168,12 +229,16 @@ element_types:
       length:
         - [Qto_PileBaseQuantities, Length]
         - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
       volume:
         - [Qto_PileBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
     property_sets:
       load_bearing:
         - [Pset_PileCommon, LoadBearing]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
   stair:
     ifc_classes:
@@ -197,8 +262,6 @@ element_types:
       volume:
         - [Qto_RoofBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
-
-  # ─── Yeni Eklenen Element Tipleri ─────────────────────────────────────────
 
   curtain_wall:
     ifc_classes:
@@ -274,15 +337,93 @@ element_types:
         - [Qto_PlateBaseQuantities, GrossArea]
         - [Qto_PlateBaseQuantities, NetArea]
         - [BaseQuantities, GrossArea]
+        - [Tekla Quantity, Area]
+        - [Tekla Quantity, Net area]
       volume:
         - [Qto_PlateBaseQuantities, GrossVolume]
         - [BaseQuantities, GrossVolume]
+        - [Tekla Quantity, Volume]
+        - [Tekla Quantity, Net volume]
       thickness:
         - [Qto_PlateBaseQuantities, Width]
         - [BaseQuantities, Width]
+      weight:
+        # Çelik levha ağırlığı
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+        - [Tekla Common, WEIGHT]
     property_sets:
       profile:
         - [Tekla Common, PROFILE]
+      structural_material:
+        - [Tekla Common, MATERIAL]
+
+  # ─── Donatı Çubuğu (item-2) ──────────────────────────────────────────────
+  # Tekla'da en sık kullanılan element tipi. Metraj birimi: adet + uzunluk + kg.
+  # IFC4: Qto_ReinforcingBarBaseQuantities | IFC2x3: BaseQuantities
+  rebar:
+    ifc_classes:
+      - IfcReinforcingBar
+    quantity_sets:
+      length:
+        - [Qto_ReinforcingBarBaseQuantities, Length]
+        - [BaseQuantities, Length]
+        - [Tekla Rebar, LENGTH]
+        - [Tekla Quantity, Length]
+      weight:
+        # Net ağırlık — donatı hesaplamalarında birincil değer
+        - [Qto_ReinforcingBarBaseQuantities, Weight]
+        - [BaseQuantities, Weight]
+        - [Tekla Rebar, WEIGHT_NET]
+        - [Tekla Rebar, WEIGHT]
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+      area:
+        # Çubuk kesit alanı (opsiyonel — Pset_ReinforcingBarCommon'dan gelir)
+        - [Qto_ReinforcingBarBaseQuantities, CrossSectionArea]
+        - [BaseQuantities, CrossSectionArea]
+    property_sets:
+      structural_material:
+        - [Pset_ReinforcingBarCommon, SteelGrade]
+        - [Tekla Rebar, GRADE]
+        - [Tekla Common, MATERIAL]
+      diameter_nominal:
+        - [Pset_ReinforcingBarCommon, NominalDiameter]
+        - [Tekla Rebar, DIAMETER]
+        - [Tekla Rebar, RADIUS]
+      bar_role:
+        # Boyuna donatı vs etriye ayrımı için
+        - [Pset_ReinforcingBarCommon, BarRole]
+      tekla_class:
+        - [Tekla Common, CLASS]
+
+  # ─── Donatı Hasırı (item-2) ──────────────────────────────────────────────
+  # Döşeme ve perde duvar hasır donatısı. Metraj: m² + kg.
+  mesh:
+    ifc_classes:
+      - IfcReinforcingMesh
+    quantity_sets:
+      area:
+        - [Qto_ReinforcingMeshBaseQuantities, MeshLength]   # proxy: uzunluk × genişlik dışarıda hesaplanır
+        - [BaseQuantities, GrossArea]
+        - [Tekla Quantity, Area]
+        - [Tekla Quantity, Net area]
+      length:
+        - [Qto_ReinforcingMeshBaseQuantities, MeshLength]
+        - [BaseQuantities, Length]
+        - [Tekla Quantity, Length]
+      weight:
+        - [Qto_ReinforcingMeshBaseQuantities, Weight]
+        - [BaseQuantities, Weight]
+        - [Tekla Quantity, Weight]
+        - [Tekla Quantity, Net weight]
+        - [Tekla Common, WEIGHT]
+    property_sets:
+      structural_material:
+        - [Pset_ReinforcingMeshCommon, SteelGrade]
+        - [Tekla Common, MATERIAL]
+      tekla_class:
+        - [Tekla Common, CLASS]
 
 # ─── Yazılım-spesifik Pset ön ekleri ────────────────────────────────────────
 # Kullanım: Vendor-spesifik property set'leri filtreleme/gruplayarak raporlama

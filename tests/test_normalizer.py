@@ -238,3 +238,58 @@ class TestAddCostColumns:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ─── weight_kg ve yeni element tipleri (item-2) ───────────────────────────────
+
+class TestWeightKgColumn:
+    """weight_kg sütunu normalizer testleri."""
+
+    def test_weight_kg_in_schema(self):
+        from ifc_pipeline.normalizer import SCHEMA
+        assert "weight_kg" in SCHEMA
+        assert SCHEMA["weight_kg"] == "float64"
+
+    def test_weight_kg_numeric_cast(self):
+        from ifc_pipeline.normalizer import to_dataframe
+        rows = [{"element_type": "rebar", "weight_kg": "12.5", "global_id": "A"}]
+        df = to_dataframe(rows)
+        assert df["weight_kg"].dtype.kind == "f"
+        assert abs(df["weight_kg"].iloc[0] - 12.5) < 1e-6
+
+    def test_weight_kg_zero_becomes_nan(self):
+        from ifc_pipeline.normalizer import to_dataframe
+        rows = [{"element_type": "rebar", "weight_kg": 0.0, "global_id": "B"}]
+        df = to_dataframe(rows)
+        import pandas as pd
+        assert pd.isna(df["weight_kg"].iloc[0])
+
+    def test_weight_kg_negative_becomes_nan(self):
+        from ifc_pipeline.normalizer import to_dataframe
+        rows = [{"element_type": "rebar", "weight_kg": -5.0, "global_id": "C"}]
+        df = to_dataframe(rows)
+        import pandas as pd
+        assert pd.isna(df["weight_kg"].iloc[0])
+
+
+class TestRebarMeshConfig:
+    """EXPECTED_QUANTITIES ve DEFAULT_QTY_COL — rebar/mesh testleri."""
+
+    def test_rebar_in_expected_quantities(self):
+        from ifc_pipeline.normalizer import EXPECTED_QUANTITIES
+        assert "rebar" in EXPECTED_QUANTITIES
+        assert "weight_kg" in EXPECTED_QUANTITIES["rebar"]
+        assert "length_m" in EXPECTED_QUANTITIES["rebar"]
+
+    def test_mesh_in_expected_quantities(self):
+        from ifc_pipeline.normalizer import EXPECTED_QUANTITIES
+        assert "mesh" in EXPECTED_QUANTITIES
+        assert "weight_kg" in EXPECTED_QUANTITIES["mesh"]
+
+    def test_rebar_default_qty_col(self):
+        from ifc_pipeline.normalizer import DEFAULT_QTY_COL
+        assert DEFAULT_QTY_COL.get("rebar") == "weight_kg"
+
+    def test_mesh_default_qty_col(self):
+        from ifc_pipeline.normalizer import DEFAULT_QTY_COL
+        assert DEFAULT_QTY_COL.get("mesh") == "weight_kg"

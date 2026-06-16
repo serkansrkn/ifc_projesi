@@ -110,7 +110,7 @@ def _safe_output_path(output_path: str) -> str:
     return new_path
 
 
-def run_pipeline(ifc_path, output_path, elem_filter=None):
+def run_pipeline(ifc_path, output_path, elem_filter=None, unit_prices=None):
     """Veri cekme ve Excel yazdirma islemlerini yapan ortak motor."""
     config = load_config()
 
@@ -143,6 +143,9 @@ def run_pipeline(ifc_path, output_path, elem_filter=None):
     print("[4/5] DataFrame olusturuluyor ve dogrulaniyor...")
     df = to_dataframe(rows)
     qa = quality_report(df)
+
+    if unit_prices:
+        df = add_cost_columns(df, unit_prices=unit_prices, currency="TL")
 
     if qa["warnings"]:
         print("  Uyarilar:")
@@ -203,7 +206,17 @@ def cmd_inspect(args):
 
 
 def cmd_extract(args):
-    run_pipeline(args.ifc_file, args.output, args.types)
+    unit_prices = None
+    if args.cost:
+        unit_prices = {}
+        for item in args.cost:
+            try:
+                k, v = item.split(":")
+                unit_prices[k] = float(v)
+            except ValueError:
+                print(f"Hata: Gecersiz cost formati '{item}'. Ornek: wall:150")
+                sys.exit(1)
+    run_pipeline(args.ifc_file, args.output, args.types, unit_prices)
 
 
 def cmd_compare(args):
@@ -260,6 +273,8 @@ def main():
                            help="Cikti dosyasi (.xlsx veya .json)")
     p_extract.add_argument("--types", nargs="+",
                            help="Sadece belirtilen tipler: wall beam column slab ...")
+    p_extract.add_argument("--cost", nargs="+",
+                           help="Birim fiyatlar. Ornek: --cost wall:150 beam:200")
 
     # compare
     p_compare = sub.add_parser("compare", help="Birden fazla IFC dosyasini karsilastir")

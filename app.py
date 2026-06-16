@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import streamlit as st
 import pandas as pd
 import yaml
+import plotly.express as px
 
 from ifc_pipeline import (
     load, detect_units, extract_all,
@@ -339,7 +340,7 @@ def generate_comparison_excel_bytes(_dfs: dict) -> bytes:
 
 @st.cache_data(show_spinner=False)
 def run_single_pipeline(file_hash: str, file_bytes: bytes, file_name: str,
-                        config: dict, elem_filter: list = None):
+                        config: dict, elem_filter: list = None, unit_prices: dict = None):
     """
     Tek dosya pipeline'ını çalıştırır ve sonuçları cache'ler.
     file_hash parametresi cache key olarak kullanılır — aynı dosya
@@ -365,6 +366,9 @@ def run_single_pipeline(file_hash: str, file_bytes: bytes, file_name: str,
         )
         df = to_dataframe(rows)
         qa = quality_report(df)
+
+        if unit_prices:
+            df = add_cost_columns(df, unit_prices=unit_prices, currency="TL")
 
         # info objesini dict'e çevir (cache serialization için)
         info_dict = {
@@ -500,6 +504,16 @@ def render_stats(df: pd.DataFrame, stats: dict):
     area_total = df["area_m2"].sum() if "area_m2" in df.columns else 0
     vol_total = df["volume_m3"].sum() if "volume_m3" in df.columns else 0
 
+    cost_html = ""
+    if "cost_TL" in df.columns:
+        cost_total = df["cost_TL"].sum()
+        cost_html = f"""
+        <div class="stat-pill" style="border-color: rgba(251, 191, 36, 0.5); background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(251, 191, 36, 0.05));">
+            <div class="value" style="color: #fbbf24;">₺{cost_total:,.2f}</div>
+            <div class="label">Toplam Maliyet</div>
+        </div>
+        """
+
     st.markdown(f"""
     <div class="stat-container">
         <div class="stat-pill">
@@ -518,6 +532,7 @@ def render_stats(df: pd.DataFrame, stats: dict):
             <div class="value">{vol_total:,.4f}</div>
             <div class="label">Toplam Hacim (m³)</div>
         </div>
+        {cost_html}
     </div>
     """, unsafe_allow_html=True)
 
@@ -574,6 +589,23 @@ with st.sidebar:
         )
 
     st.markdown("---")
+    st.markdown("## 💰 Maliyet (Birim Fiyatlar ₺)")
+    st.caption("Boş bırakılan elemanlar hesaplanmaz.")
+    unit_prices = {}
+    col1, col2 = st.columns(2)
+    with col1:
+        w_price = st.number_input("Duvar (m²)", min_value=0.0, value=0.0, step=10.0)
+        s_price = st.number_input("Döşeme (m²)", min_value=0.0, value=0.0, step=10.0)
+    with col2:
+        b_price = st.number_input("Kiriş (m)", min_value=0.0, value=0.0, step=10.0)
+        c_price = st.number_input("Kolon (m)", min_value=0.0, value=0.0, step=10.0)
+    
+    if w_price > 0: unit_prices["wall"] = w_price
+    if s_price > 0: unit_prices["slab"] = s_price
+    if b_price > 0: unit_prices["beam"] = b_price
+    if c_price > 0: unit_prices["column"] = c_price
+
+    st.markdown("---")
     st.markdown("## 📥 Çıktı Formatı")
     output_format = st.selectbox(
         "İndirme formatı",
@@ -628,6 +660,7 @@ if mode == "📄 Tekli Metraj Çıkarma":
                     file_name=uploaded_file.name,
                     config=config,
                     elem_filter=elem_filter,
+                    unit_prices=unit_prices,
                 )
 
                 st.write(f"✅ {info_dict['filename']}: {len(df):,} element çıkarıldı")
@@ -702,22 +735,43 @@ if mode == "📄 Tekli Metraj Çıkarma":
 
             with tab_by_type:
                 if not df.empty:
-                    type_summary = df.groupby("element_type", observed=True).agg(
-                        Adet=("global_id", "count"),
-                        **{f"Alan (m²)": ("area_m2", "sum")},
-                        **{f"Hacim (m³)": ("volume_m3", "sum")},
-                        **{f"Uzunluk (m)": ("length_m", "sum")},
-                    ).reset_index()
-                    type_summary.columns = ["Element Tipi", "Adet", "Alan (m²)", "Hacim (m³)", "Uzunluk (m)"]
+                    agg_dict = {
+                        "Adet": ("global_id", "count"),
+                        "Alan (m²)": ("area_m2", "sum"),
+                        "Hacim (m³)": ("volume_m3", "sum"),
+                        "Uzunluk (m)": ("length_m", "sum"),
+                    }
+                    if "cost_TL" in df.columns:
+                        agg_dict["Maliyet (₺)"] = ("cost_TL", "sum")
+                        
+                    type_summary = df.groupby("element_type", observed=True).agg(**agg_dict).reset_index()
+                    type_summary.rename(columns={"element_type": "Element Tipi"}, inplace=True)
                     type_summary["Element Tipi"] = type_summary["Element Tipi"].str.upper()
                     st.dataframe(type_summary, use_container_width=True, hide_index=True)
 
-                    # Bar chart
-                    st.bar_chart(
-                        type_summary.set_index("Element Tipi")["Adet"],
-                        use_container_width=True,
-                        color="#4f8ef7",
-                    )
+                    # Etkileşimli Grafikler (Plotly)
+                    st.markdown("#### Görsel Analiz")
+                    chart_col1, chart_col2 = st.columns(2)
+                    
+                    with chart_col1:
+                        if type_summary["Hacim (m³)"].sum() > 0:
+                            fig_vol = px.pie(type_summary, values="Hacim (m³)", names="Element Tipi", 
+                                             title="Hacim Dağılımı (m³)", hole=0.4,
+                                             color_discrete_sequence=px.colors.sequential.Teal)
+                            fig_vol.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0")
+                            st.plotly_chart(fig_vol, use_container_width=True)
+                        else:
+                            st.info("Hacim verisi bulunamadı.")
+                            
+                    with chart_col2:
+                        if type_summary["Alan (m²)"].sum() > 0:
+                            fig_area = px.bar(type_summary, x="Element Tipi", y="Alan (m²)", 
+                                              title="Element Tipi Bazında Alan (m²)",
+                                              color="Element Tipi", text_auto='.2s')
+                            fig_area.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0")
+                            st.plotly_chart(fig_area, use_container_width=True)
+                        else:
+                            st.info("Alan verisi bulunamadı.")
 
             # ── İndirme Butonları ────────────────────────────────────────
             st.markdown("### 💾 Rapor İndirme")

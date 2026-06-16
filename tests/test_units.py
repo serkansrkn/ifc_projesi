@@ -137,3 +137,45 @@ class TestUnitFactors:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestMassUnits:
+    """Kütle birimi (item-2) testleri."""
+
+    def test_kilogram_in_unit_to_si(self):
+        assert UNIT_TO_SI["KILOGRAM"] == 1.0
+
+    def test_gram_in_unit_to_si(self):
+        assert abs(UNIT_TO_SI["GRAM"] - 0.001) < 1e-9
+
+    def test_tonne_in_unit_to_si(self):
+        assert UNIT_TO_SI["TONNE"] == 1000.0
+
+    def test_pound_in_unit_to_si(self):
+        assert abs(UNIT_TO_SI["POUND"] - 0.453592) < 1e-6
+
+    def test_unit_factors_default_mass(self):
+        """UnitFactors.mass varsayılan olarak 1.0 (kg) olmalı."""
+        uf = UnitFactors(length=1.0, area=1.0, volume=1.0, source_info="test")
+        assert uf.mass == 1.0
+
+    def test_unit_factors_custom_mass(self):
+        uf = UnitFactors(length=1.0, area=1.0, volume=1.0,
+                         source_info="test", mass=1000.0)
+        assert uf.mass == 1000.0
+
+    def test_describe_includes_mass(self):
+        uf = UnitFactors(length=1.0, area=1.0, volume=1.0,
+                         source_info="test", mass=0.001)
+        desc = uf.describe()
+        assert "Kütle:" in desc
+
+    def test_safe_convert_weight_gram_to_kg(self):
+        """1 gram → 0.001 kg."""
+        result = safe_convert(1.0, 0.001)
+        assert abs(result - 0.001) < 1e-9
+
+    def test_safe_convert_tonne_to_kg(self):
+        """1 ton → 1000 kg."""
+        result = safe_convert(1.0, 1000.0)
+        assert result == 1000.0
